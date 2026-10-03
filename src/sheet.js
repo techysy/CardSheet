@@ -43,8 +43,8 @@ function parseWxH(spec, what) {
   return [Number(m[1]), Number(m[2])];
 }
 
-/** 间距正中的裁切线：列间竖线、行间横线，浅灰；线宽随 dpi（约 0.17mm）并取整像素画 rect，
- *  避免 1px stroke 被抗锯齿稀释成半透明（打印时太细也看不见） */
+/** 间距正中的裁切线：列间竖线、行间横线，浅灰；线宽随 dpi（约 0.17mm）并取整像素画 rect
+ * 简单可靠的 SVG 实现 */
 function cutlineSvg(pw, ph, m, nCols, nRows, cellW, cellH, g, dpi) {
   const wLine = Math.max(1, Math.round(dpi / 150));
   let parts = '';
@@ -88,14 +88,16 @@ async function buildSheets(o = {}) {
     background = '#ffffff', format = 'png', quality = 90,
   } = o;
   if (!Array.isArray(images) || !images.length) throw new Error('未提供图片');
-  if (repeat && !images.length) throw new Error('repeat 模式至少需要一张图片');
 
   const dpiN = Math.max(36, Math.min(1200, Number(dpi) || 300));
+  if (dpiN < 36) throw new Error(`分辨率 ${dpi} 过低，最小 36dpi`);
   const [paperWmm, paperHmm] = resolvePaper(paper, landscape);
   const pw = mm2px(paperWmm, dpiN);
   const ph = mm2px(paperHmm, dpiN);
-  const g = mm2px(Math.max(0, Number(gap)), dpiN);
-  const m = mm2px(Math.max(0, Number(margin)), dpiN);
+  const gapN = Number(gap);
+  const marginN = Number(margin);
+  const g = mm2px(gapN < 0 ? 0 : gapN, dpiN);
+  const m = mm2px(marginN < 0 ? 0 : marginN, dpiN);
   if (pw - 2 * m < 20 || ph - 2 * m < 20) throw new Error('页边距过大，可用版面不足 20px');
 
   // 单元格与行列数（px）

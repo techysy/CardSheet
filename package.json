@@ -7,8 +7,16 @@
   },
   "main": "src/sheet.js",
   "scripts": {
-    "test": "node test/smoke.js"
+    "test": "node test/smoke.js",
+    "docs": "node scripts/build-diagrams.mjs"
   },
+  "files": [
+    "bin",
+    "src",
+    "docs",
+    "README.md",
+    "LICENSE"
+  ],
   "engines": {
     "node": ">=20.9.0"
   },

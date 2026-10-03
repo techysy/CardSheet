@@ -31,6 +31,25 @@ const fs = require('fs');
 const path = require('path');
 const { buildSheets, PAPERS } = require('../src/sheet');
 
+/** 严格解析数值参数，支持负数检测 */
+function parsePositiveNumber(val, name) {
+  const n = Number(val);
+  if (isNaN(n)) throw new Error(`${name} 必须为数字：${val}`);
+  if (n < 0) throw new Error(`${name} 不能为负数：${val}`);
+  return n;
+}
+
+/** 解析数值或布尔值：若下一个参数不是选项且是数字则为值，否则为 true */
+function nextAsNumberOrTrue(argv, i) {
+  const next = argv[i + 1];
+  if (next === undefined || next.startsWith('--') || (next.startsWith('-') && next !== '-' && isNaN(Number(next)))) {
+    return null; // 无值，视为布尔 flag
+  }
+  const n = Number(next);
+  if (!isNaN(n)) { i++; return n; }
+  throw new Error(`--${argv[i].slice(2)} 期望数值参数：${next}`);
+}
+
 function usage() {
   console.log(`cardsheet — 图片拼版打印（纸张预设 / 间距 / 裁切线），打印后按格裁切
 
@@ -67,25 +86,46 @@ async function main() {
   const images = args._;
   if (!images.length || args.help || args.h) { usage(); process.exit(images.length ? 0 : 1); }
 
+  // 创建输出目录并校验权限
   const outDir = args.o ? path.resolve(args.o) : process.cwd();
-  fs.mkdirSync(outDir, { recursive: true });
+  try {
+    fs.mkdirSync(outDir, { recursive: true });
+    // 测试写入权限
+    const testFile = path.join(outDir, '.cardsheet_write_test');
+    fs.writeFileSync(testFile, 'test');
+    fs.unlinkSync(testFile);
+  } catch (e) {
+    throw new Error(`无法写入目录 "${outDir}": ${e.message}`);
+  }
+
   const prefix = String(args.prefix || 'sheet').replace(/[\\/:*?"<>|]/g, '_') || 'sheet';
 
-  const result = await buildSheets({
-    images: images.map((p) => ({ buffer: fs.readFileSync(p), name: path.basename(p) })),
+  // 构建参数对象，添加严格校验
+  const sheetOpts = {
+    images: images.map((p) => {
+      let buf;
+      try {
+        buf = fs.readFileSync(p);
+      } catch (e) {
+        throw new Error(`无法读取图片 "${p}": ${e.message}`);
+      }
+      return { buffer: buf, name: path.basename(p) };
+    }),
     paper: args.sheet || args.paper || 'a4',
-    dpi: Number(args.dpi) || 300,
+    dpi: parsePositiveNumber(args.dpi ?? 300, 'dpi'),
     landscape: !!args.landscape,
-    cols: args.cols ? Number(args.cols) : null,
-    rows: args.rows ? Number(args.rows) : null,
+    cols: args.cols !== undefined ? parseInt(args.cols, 10) : null,
+    rows: args.rows !== undefined ? parseInt(args.rows, 10) : null,
     cell: args.cell || null,
-    gap: args.gap === undefined ? 2 : Number(args.gap),
-    margin: args.margin === undefined ? 5 : Number(args.margin),
+    gap: args.gap === undefined ? 2 : parsePositiveNumber(args.gap, 'gap'),
+    margin: args.margin === undefined ? 5 : parsePositiveNumber(args.margin, 'margin'),
     repeat: !!args.repeat,
     cutlines: !!args.cutlines,
     format: ['png', 'jpeg'].includes(args.format) ? args.format : 'png',
-    quality: Number(args.quality) || 90,
-  });
+    quality: parsePositiveNumber(args.quality ?? 90, 'quality'),
+  };
+
+  const result = await buildSheets(sheetOpts);
 
   const written = [];
   result.pages.forEach((buf, i) => {
