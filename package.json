@@ -5,10 +5,10 @@
   "bin": {
     "cardsheet": "bin/cardsheet.js"
   },
-  "main": "src/sheet.js",
+  "main": "src/index.js",
   "scripts": {
     "test": "node test/smoke.js",
-    "check": "node --check bin/cardsheet.js && node --check src/sheet.js && node --check test/smoke.js",
+    "check": "node --check bin/cardsheet.js && node --check src/sheet.js && node --check src/pdf.js && node --check src/index.js && node --check test/smoke.js",
     "docs": "node scripts/build-diagrams.mjs",
     "pack:check": "npm pack --dry-run",
     "release-check": "bash scripts/release-check.sh",
@@ -40,6 +40,7 @@
     "node": ">=20.9.0"
   },
   "dependencies": {
+    "pdf-lib": "^1.17.1",
     "sharp": "^0.35.4"
   },
   "devDependencies": {
@@ -50,6 +51,7 @@
     "imposition",
     "tiling",
     "sheet",
+    "pdf",
     "拼版",
     "拆件"
   ],

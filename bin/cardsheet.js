@@ -19,8 +19,11 @@
  *   --margin 5        页边距（毫米，默认 5）
  *   --repeat          用第一张图铺满整页（同一张卡片拼版的场景）
  *   --cutlines        在间距正中画裁切线
- *   --format png      输出格式 png | jpeg（默认 png）
- *   --quality 90      jpeg 质量
+ *   --rotate 90       每张图先顺时针转 0/90/180/270（默认 0）
+ *   --fit contain     缩放方式：contain 完整放入 / cover 铺满裁掉溢出 / fill 拉伸变形（默认 contain）
+ *   --position centre  cover 时的对齐方式，如 top / left bottom（默认 centre）
+ *   --format png      输出格式 png | jpeg | pdf（默认 png；pdf 是把各页装进一个文件）
+ *   --quality 90      jpeg 质量（--format pdf 时是页内嵌图的 jpeg 质量）
  *   --prefix sheet    输出文件名前缀（多页自动 -2、-3…）
  *   -o 目录           输出目录（默认当前目录）
  *
@@ -30,6 +33,7 @@
 const fs = require('fs');
 const path = require('path');
 const { buildSheets, PAPERS } = require('../src/sheet');
+const { pagesToPdf } = require('../src/pdf');
 
 /** 严格解析数值参数，支持负数检测 */
 function parsePositiveNumber(val, name) {
@@ -63,6 +67,8 @@ function usage() {
   cardsheet card.png --paper a4 --repeat --cutlines          # 一张卡片铺满 A4，带裁切线
   cardsheet front.png back.png --paper a4 --cols 2 --rows 5  # 双面卡片各占一页 2×5
   cardsheet p1.png p2.png p3.png --paper 4x6 --landscape --gap 3
+  cardsheet scan.jpg --rotate 90 --fit cover --cutlines     # 转正后铺满裁掉溢出
+  cardsheet *.png --paper a4 --format pdf --prefix 名片     # 多页装进一个 PDF
 `);
 }
 
@@ -102,6 +108,15 @@ async function main() {
 
   const prefix = String(args.prefix || 'sheet').replace(/[\\/:*?"<>|]/g, '_') || 'sheet';
 
+  // 格式非法直接报错，别悄悄退回 png —— 拼完版发现拿到的是 png，是很难查的一类错
+  const fmt = String(args.format || 'png').toLowerCase();
+  if (!['png', 'jpeg', 'pdf'].includes(fmt)) {
+    throw new Error(`--format 仅支持 png / jpeg / pdf，收到：${args.format}`);
+  }
+  // PDF 里装的仍是页面图像，所以引擎那边照旧出图；用 jpeg 是因为 PDF 原生嵌 JPEG 体积最小，
+  // 且不引入第二次转码（见 src/pdf.js）
+  const engineFormat = fmt === 'pdf' ? 'jpeg' : fmt;
+
   // 构建参数对象，添加严格校验
   const sheetOpts = {
     images: images.map((p) => {
@@ -123,24 +138,42 @@ async function main() {
     margin: args.margin === undefined ? 5 : parsePositiveNumber(args.margin, 'margin'),
     repeat: !!args.repeat,
     cutlines: !!args.cutlines,
-    format: ['png', 'jpeg'].includes(args.format) ? args.format : 'png',
+    rotate: args.rotate === undefined ? 0 : parsePositiveNumber(args.rotate, 'rotate'),
+    fit: args.fit || 'contain',
+    position: args.position || 'centre',
+    format: engineFormat,
     quality: parsePositiveNumber(args.quality ?? 90, 'quality'),
   };
 
   const result = await buildSheets(sheetOpts);
 
   const written = [];
-  result.pages.forEach((buf, i) => {
-    const name = `${prefix}${i > 0 ? `-${i + 1}` : ''}.${args.format === 'jpeg' ? 'jpg' : 'png'}`;
-    const full = path.join(outDir, name);
-    fs.writeFileSync(full, buf);
+  if (fmt === 'pdf') {
+    const pdf = await pagesToPdf(result.pages, {
+      width: result.pageW, height: result.pageH, dpi: result.dpi,
+    });
+    const full = path.join(outDir, `${prefix}.pdf`);
+    fs.writeFileSync(full, pdf);
     written.push(full);
-  });
+  } else {
+    const ext = engineFormat === 'jpeg' ? 'jpg' : 'png';
+    result.pages.forEach((buf, i) => {
+      const full = path.join(outDir, `${prefix}${i > 0 ? `-${i + 1}` : ''}.${ext}`);
+      fs.writeFileSync(full, buf);
+      written.push(full);
+    });
+  }
   const cellMmW = (result.cellW / result.dpi * 25.4).toFixed(1);
   const cellMmH = (result.cellH / result.dpi * 25.4).toFixed(1);
+  const extras = [
+    args.repeat ? '单图重复铺满' : '',
+    args.cutlines ? '已画裁切线' : '',
+    sheetOpts.rotate ? `已旋转 ${sheetOpts.rotate}°` : '',
+    sheetOpts.fit !== 'contain' ? `填充 ${sheetOpts.fit}` : '',
+  ].filter(Boolean).join(' · ');
   console.log(`✓ ${result.pageCount} 页 → ${written.join(', ')}`);
   console.log(`  画布 ${result.pageW}×${result.pageH}px @${result.dpi}dpi · 每页 ${result.cols} 列 × ${result.rows} 行 = ${result.perPage} 格`);
-  console.log(`  单元格 ≈ ${cellMmW}×${cellMmH}mm${args.repeat ? ' · 单图重复铺满' : ''}${args.cutlines ? ' · 已画裁切线' : ''}`);
+  console.log(`  单元格 ≈ ${cellMmW}×${cellMmH}mm${extras ? ` · ${extras}` : ''}`);
 }
 
 main().catch((e) => { console.error('✗', e.message); process.exit(1); });

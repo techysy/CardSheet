@@ -7,6 +7,8 @@
  * 列数×行数 contain 居中摆进单元格，间距与页边距按毫米计，可在间距正中画裁切线。
  *
  * 管线形状与「逐图加水印」不同：这里是 N 张进 → 1 张出（超量的图自动分页）。
+ *
+ * 本模块只吐图片（PNG / JPEG）。PDF 封装在 src/pdf.js，是引擎之上的可选一层。
  */
 const sharp = require('sharp');
 
@@ -22,6 +24,15 @@ const PAPERS = {
 };
 
 const mm2px = (v, dpi) => Math.max(1, Math.round((v / 25.4) * dpi));
+
+/** sharp 的 position 白名单（'center' 是 sharp 自己不认的别名，进来时归一化掉） */
+const FIT_POSITIONS = ['top', 'right top', 'right', 'right bottom', 'bottom', 'left bottom', 'left', 'left top', 'centre', 'entropy', 'attention'];
+
+/** 原图的宽高比；rotate 为 90/270 时宽高互换 */
+function aspectOf(meta, rotate) {
+  const w = meta.width || 3, h = meta.height || 2;
+  return rotate % 180 === 0 ? w / h : h / w;
+}
 
 /** 'a4' 预设 或 '210x297'（毫米）；landscape 交换宽高。返回 [宽mm, 高mm] */
 function resolvePaper(spec, landscape) {
@@ -75,6 +86,9 @@ function cutlineSvg(pw, ph, m, nCols, nRows, cellW, cellH, g, dpi) {
  *   margin   页边距（毫米，默认 5）
  *   repeat   用第一张图铺满整页（同一张卡片拼版）；不给则按顺序逐格排，超量自动分页
  *   cutlines 在间距正中画裁切线
+ *   rotate   每张图先顺时针转 0/90/180/270（默认 0）。会改变宽高比，自动排布按转完之后的朝向算
+ *   fit      contain 完整放进格子（留白填背景色）| cover 铺满格子并裁掉溢出 | fill 拉伸变形铺满（默认 contain）
+ *   position cover/contain 时的对齐方式，如 top / left / centre（默认 centre）
  *   background 页面底色（默认白）
  *   format   png|jpeg 输出格式；quality jpeg 质量
  * @returns {{pages:Buffer[], pageW,pageH, cols,rows, cellW,cellH, perPage, pageCount}}
@@ -85,12 +99,22 @@ async function buildSheets(o = {}) {
     cols = null, rows = null, cell = null,
     gap = 2, margin = 5,
     repeat = false, cutlines = false,
+    rotate = 0, fit = 'contain', position = 'centre',
     background = '#ffffff', format = 'png', quality = 90,
   } = o;
   if (!Array.isArray(images) || !images.length) throw new Error('未提供图片');
 
   // dpi 夹在 [36, 1200]：太低的没法打印，太高的画布像素会失控
   const dpiN = Math.max(36, Math.min(1200, Number(dpi) || 300));
+
+  // 旋转/缩放模式/对齐方式都是白名单：非法值直接报错，而不是悄悄回退到默认值让人拿到错图
+  const rot = Number(rotate) || 0;
+  if (![0, 90, 180, 270].includes(rot)) throw new Error(`rotate 仅支持 0/90/180/270，收到：${rotate}`);
+  const fitMode = String(fit).toLowerCase();
+  if (!['contain', 'cover', 'fill'].includes(fitMode)) throw new Error(`fit 仅支持 contain/cover/fill，收到：${fit}`);
+  const posIn = String(position).toLowerCase();
+  if (!FIT_POSITIONS.includes(posIn)) throw new Error(`position 仅支持 ${FIT_POSITIONS.join(' / ')}，收到：${position}`);
+  const pos = posIn === 'center' ? 'centre' : posIn;
   const [paperWmm, paperHmm] = resolvePaper(paper, landscape);
   const pw = mm2px(paperWmm, dpiN);
   const ph = mm2px(paperHmm, dpiN);
@@ -113,9 +137,8 @@ async function buildSheets(o = {}) {
     cellW = Math.floor((pw - 2 * m - (nCols - 1) * g) / nCols);
     cellH = Math.floor((ph - 2 * m - (nRows - 1) * g) / nRows);
   } else if (cols || rows) {
-    // 只给一个方向：另一方向以首图宽高比推
-    const first = await sharp(images[0].buffer).metadata();
-    const aspect = (first.width || 3) / (first.height || 2);
+    // 只给一个方向：另一方向以首图宽高比推（按旋转后的朝向，否则转 90° 的图会按原比例算行数）
+    const aspect = aspectOf(await sharp(images[0].buffer).metadata(), rot);
     if (cols) {
       nCols = cols;
       cellW = Math.floor((pw - 2 * m - (nCols - 1) * g) / nCols);
@@ -129,8 +152,7 @@ async function buildSheets(o = {}) {
     }
   } else {
     // 全自动：以首图宽高比枚举列数（单元格最窄 15mm），取每页张数最多的方案（并列取列少者）
-    const first = await sharp(images[0].buffer).metadata();
-    const aspect = (first.width || 3) / (first.height || 2);
+    const aspect = aspectOf(await sharp(images[0].buffer).metadata(), rot);
     const minCell = mm2px(15, dpiN);
     const maxCols = Math.max(1, Math.floor((pw - 2 * m + g) / (minCell + g)));
     let best = null;
@@ -162,9 +184,12 @@ async function buildSheets(o = {}) {
     const comps = [];
     for (let i = 0; i < pageImgs.length; i++) {
       const c = i % nCols, r = Math.floor(i / nCols);
-      // contain 居中进单元格：横图/竖图自动适配，超出的留白就是背景色
-      const buf = await sharp(pageImgs[i].buffer)
-        .resize(cellW, cellH, { fit: 'contain', background })
+      // 先转再缩：sharp 的流水线固定是 rotate 在 resize 之前，转完的宽高比才对得上单元格
+      // contain 完整放进格子（留白填背景色）/ cover 铺满并裁掉溢出 / fill 拉伸变形铺满
+      let pipe = sharp(pageImgs[i].buffer);
+      if (rot) pipe = pipe.rotate(rot);
+      const buf = await pipe
+        .resize(cellW, cellH, { fit: fitMode, position: pos, background })
         .png().toBuffer();
       comps.push({ input: buf, left: m + c * (cellW + g), top: m + r * (cellH + g) });
     }

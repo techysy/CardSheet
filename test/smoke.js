@@ -9,7 +9,9 @@ const path = require('path');
 const assert = require('assert');
 const { spawnSync } = require('child_process');
 const sharp = require('sharp');
+const { PDFDocument } = require('pdf-lib');
 const { buildSheets, mm2px } = require('../src/sheet');
+const { pagesToPdf } = require('../src/pdf');
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'cardsheet-test-'));
 let pass = 0, fail = 0;
@@ -122,6 +124,65 @@ async function main() {
     assert(w === 255, `无裁切线时同一位置应留白（${w}）`);
   });
 
+  await t('rotate 90：先转后缩，版面按转完的朝向算', async () => {
+    // 契约：自动排布用的宽高比必须是「旋转之后」的。imgA 是 400×250 横图，转 90° 就是
+    // 250×400 竖图 —— 所以它的版面必须和直接喂 imgB 时一模一样。
+    // 若引擎忘了在算宽高比时把 90/270 的宽高互换，这两条结果的行列数就会对不上。
+    const turned = await buildSheets({ images: [{ buffer: imgA }], paper: 'a4', dpi: 100, repeat: true, rotate: 90 });
+    const native = await buildSheets({ images: [{ buffer: imgB }], paper: 'a4', dpi: 100, repeat: true });
+    assert.deepStrictEqual(
+      { c: turned.cols, r: turned.rows, w: turned.cellW, h: turned.cellH },
+      { c: native.cols, r: native.rows, w: native.cellW, h: native.cellH },
+      '横图转 90° 后的版面应与竖图本身一致',
+    );
+  });
+  await t('非法 rotate / fit / position 直接报错，不静默回退', async () => {
+    for (const [opt, msg] of [
+      [{ rotate: 45 }, 'rotate'],
+      [{ fit: 'squish' }, 'fit'],
+      [{ position: '中间' }, 'position'],
+    ]) {
+      await assert.rejects(
+        () => buildSheets({ images: [{ buffer: imgA }], paper: 'a4', dpi: 100, repeat: true, ...opt }),
+        (e) => { assert(e.message.includes(msg), `错误信息应点明是 ${msg}，实际：${e.message}`); return true; },
+      );
+    }
+  });
+  await t('fit cover 铺满格子裁掉溢出；contain + position 按方位贴边', async () => {
+    // 竖图 250×400 进 197×197 的方格（cell 50x50mm @100dpi，margin 4mm=16px）
+    const m0 = 16, cellPx = 197, midY = 100;
+    const cover = await buildSheets({
+      images: [{ buffer: imgB }], paper: '120x80', dpi: 100, cell: '50x50', margin: 4, gap: 2,
+      repeat: true, fit: 'cover',
+    });
+    assert((await px(cover.pages[0], m0 + 2, m0 + 2))[0] < 80, 'cover 下格子角落应仍是图片内容，没有留白');
+
+    // contain + left：内容贴左边缘，右边缘留白（默认居中时内容是居中的）
+    const left = await buildSheets({
+      images: [{ buffer: imgB }], paper: '120x80', dpi: 100, cell: '50x50', margin: 4, gap: 2,
+      repeat: true, position: 'left',
+    });
+    assert((await px(left.pages[0], m0 + 2, midY))[0] < 80, 'position=left 时内容应贴住左边缘');
+    assert((await px(left.pages[0], m0 + cellPx - 2, midY))[0] === 255, 'position=left 时右边缘应留白');
+  });
+  await t('PDF：多页装进一个文件，页数与纸张尺寸都对得上', async () => {
+    // 5 图 4 格 → 2 页；120×80mm @100dpi = 472×315px
+    const r = await buildSheets({
+      images: [imgA, imgB, imgA, imgB, imgA].map((b) => ({ buffer: b })),
+      paper: '120x80', dpi: 100, cell: '40x30', margin: 4, gap: 2, format: 'jpeg',
+    });
+    assert.strictEqual(r.pages.length, 2, '5 图 4 格应分 2 页');
+    const pdf = await pagesToPdf(r.pages, { width: r.pageW, height: r.pageH, dpi: r.dpi });
+    assert.strictEqual(pdf.subarray(0, 5).toString(), '%PDF-', '应是一个 PDF 文件');
+
+    // 反解回来核对：用 PDFDocument 读回，页数与页面尺寸（px × 72/dpi = pt）必须对得上
+    const doc = await PDFDocument.load(pdf);
+    assert.strictEqual(doc.getPageCount(), 2, 'PDF 页数应与页面数一致');
+    const size = doc.getPage(0).getSize();
+    assert(Math.abs(size.width - 472 * 0.72) < 0.5, `页宽应为 ${472 * 0.72}pt，实际 ${size.width}`);
+    assert(Math.abs(size.height - 315 * 0.72) < 0.5, `页高应为 ${315 * 0.72}pt，实际 ${size.height}`);
+  });
+
   console.log('\n[2] CLI 全链路');
   await t('cardsheet --repeat --cutlines 出图', async () => {
     const a = path.join(TMP, 'card.png');
@@ -137,6 +198,25 @@ async function main() {
     const m = await sharp(fs.readFileSync(out)).metadata();
     assert.strictEqual(m.width, 472);
     assert.strictEqual(m.height, 315);
+  });
+  await t('cardsheet --format pdf 出单个文件，多页合成一页组', async () => {
+    const a = path.join(TMP, 'front.png');
+    const b = path.join(TMP, 'back.png');
+    fs.writeFileSync(a, imgA);
+    fs.writeFileSync(b, imgB);
+    const outDir = path.join(TMP, 'out-pdf');
+    const r = spawnSync(process.execPath, [
+      path.join(__dirname, '..', 'bin', 'cardsheet.js'), a, b, a, b, a,
+      '--sheet', '120x80', '--dpi', '100', '--cell', '40x30', '--margin', '4',
+      '--rotate', '90', '--format', 'pdf', '-o', outDir,
+    ], { encoding: 'utf8', timeout: 60000 });
+    assert.strictEqual(r.status, 0, `CLI 退出码 ${r.status}\n${r.stdout}\n${r.stderr}`);
+    const out = path.join(outDir, 'sheet.pdf');
+    assert(fs.existsSync(out), '输出缺失');
+    // PDF 模式下只应有一个文件，不能同时留一堆中间 png/jpg
+    assert.deepStrictEqual(fs.readdirSync(outDir), ['sheet.pdf'], 'PDF 模式不应留下中间页文件');
+    const doc = await PDFDocument.load(fs.readFileSync(out));
+    assert.strictEqual(doc.getPageCount(), 2, '5 图 4 格应装成 2 页 PDF');
   });
 
   console.log(`\n结果：${pass} 通过，${fail} 失败  （fixtures 保留在 ${TMP}）`);
