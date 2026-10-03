@@ -85,6 +85,9 @@ function parseArgs(argv) {
         args[key] = true;
       } else { args[key] = next; i++; }
     } else if (a === '-o') { args.o = argv[++i]; }
+    // -h 之前没在这里接住，被当成图片文件名推进 _ 里了 —— 于是 main() 里那句
+    // `args.h` 永远是 undefined，`cardsheet -h` 会去读一个叫 "-h" 的文件然后报错
+    else if (a === '-h') { args.h = true; }
     else args._.push(a);
   }
   return args;
@@ -94,7 +97,11 @@ async function main() {
   const [, , ...rest] = process.argv;
   const args = parseArgs(rest);
   const images = args._;
-  if (!images.length || args.help || args.h) { usage(); process.exit(images.length ? 0 : 1); }
+  // --help 问的是「怎么用」，不是用法错误，退 0；什么都不给才是退 1。
+  // 两者写在同一个条件里时，`cardsheet --help` 会落进 images.length === 0 那支退 1 ——
+  // release.yml 的三平台试装正好跑 `npx cardsheet --help`，第一版就是这么挂的。
+  if (args.help || args.h) { usage(); process.exit(0); }
+  if (!images.length) { usage(); process.exit(1); }
 
   // 创建输出目录并校验权限
   const outDir = args.o ? path.resolve(args.o) : process.cwd();

@@ -6,6 +6,21 @@
 
 ## [Unreleased]
 
+## [0.2.1] (2026-10-04)
+
+修 0.2.0 的两个 bug —— 都是 release.yml 的三平台试装第一次真跑时抓出来的。
+
+### 🐛 修复
+
+- **`cardsheet --help` 退 1**：问「怎么用」被当成了用法错误。此前 `--help` 和「没给参数」共用一个判断，`cardsheet --help` 会落进 `images.length === 0` 那支退 1。问帮助不是错误，退 0
+- **`cardsheet -h` 从来没生效过**：`parseArgs` 只在 `else` 分支里接了 `-o`，`-h` 被当成了图片文件名推进 `_`，于是去读一个叫 `-h` 的文件然后报错。`main()` 里那句 `args.h` 一直是死代码
+- **release.yml 试装步骤的 tgz 路径被 npm 当成 GitHub 简写**：`npm install dist/xxx.tgz` 里的 `dist/xxx.tgz` 长得像 `<user>/<repo>`，npm 解析成 `ssh://git@github.com/dist/...` —— 本机报 `EALLOWGIT`，CI 上（预装 git）则静默走 git 路线死在 `Permission denied (publickey)`。改用 `file:` 前缀
+
+### 🔧 CI / 工程化
+
+- **verify 补一步真跑 `--format pdf`**：PDF 是 0.2.0 新增的输出路径，依赖 pdf-lib。旧步骤只跑不含 PDF 的拼版，pdf-lib 就算漏在 `dependencies` 里也照样全绿 —— 只有 PDF 那条路会在运行时炸，而三平台试装的意义正是抓这种「装得上但用不了」的问题
+- **冒烟测试 13 → 14 组**：新增 `cardsheet --help` / `-h` 退 0、不给参数退 1 的退出码断言。这正是 CI 那一步验的契约，此前测试里没有
+
 ## [0.2.0] (2026-10-04)
 
 朝向、填充方式与输出格式的第二轮。

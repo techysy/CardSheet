@@ -261,6 +261,21 @@ async function main() {
     assert.strictEqual(doc.getPageCount(), 2, '5 图 4 格应装成 2 页 PDF');
   });
 
+  await t('cardsheet --help 退 0（退 1 会被 CI 的 bin 入口检查判成失败）', async () => {
+    for (const flag of ['--help', '-h']) {
+      const r = spawnSync(process.execPath, [path.join(__dirname, '..', 'bin', 'cardsheet.js'), flag], {
+        encoding: 'utf8', timeout: 60000,
+      });
+      assert.strictEqual(r.status, 0, `${flag} 应退 0，实际退 ${r.status}`);
+      assert(r.stdout.includes('cardsheet —'), `${flag} 应打印用法`);
+    }
+    // 反过来：什么都不给是用法错误，必须退 1
+    const none = spawnSync(process.execPath, [path.join(__dirname, '..', 'bin', 'cardsheet.js')], {
+      encoding: 'utf8', timeout: 60000,
+    });
+    assert.strictEqual(none.status, 1, '不给参数应退 1（用法错误）');
+  });
+
   console.log(`\n结果：${pass} 通过，${fail} 失败  （fixtures 保留在 ${TMP}）`);
   process.exit(fail ? 1 : 0);
 }
