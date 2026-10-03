@@ -6,11 +6,29 @@
 
 ## [Unreleased]
 
+### ✨ 新功能
+
+- **旋转** `--rotate 0/90/180/270`：每张图先顺时针转再进格子。关键是**版面按转完之后的朝向重算** —— `aspectOf()` 在 90/270 时把宽高互换，否则一张横图转成竖的之后会被塞进一排细高格子里。测试断言的正是「横图转 90° 的版面 == 直接喂竖图的版面」
+- **三种填充方式** `--fit`：`contain` 完整放进格子（留白填页面底色，默认）/ `cover` 铺满并裁掉溢出 / `fill` 拉伸变形铺满
+- **对齐方位** `--position`：`contain` / `cover` 时的贴边方向（`top`、`left bottom`、`entropy` 等 sharp 支持的方位）
+- **PDF 输出** `--format pdf`：把所有页装进**一个**文件，页面尺寸即纸张实尺（px × 72/dpi = PDF 点）。页面按原样嵌入 —— PNG 走 FlateDecode、JPEG 走 DCTDecode，**不重新编码**，所以没有二次画质损失
+- **主入口** `src/index.js`：把 `sheet` 与 `pdf` 两个模块再导出一次，`pagesToPdf` 可以直接从 `@techysy/cardsheet` 取，不必写内部路径
+
+### 🛡️ 健壮性
+
+- `rotate` / `fit` / `position` / `format` 走白名单校验：`--rotate 45`、`--fit squish`、`--format gif` 一律报错并列出合法值。此前 `--format` 写错会静默退回 png —— 拼完整版才发现拿到的是 png，是很难查的一类错
+- PDF 页面类型按**魔数**判定（`embedPng` / `embedJpg`）而不是看文件后缀，并逐页包一层错误信息指明是第几页出的问题
+
 ### 🔧 CI / 工程化
 
 - **发版前审查** `scripts/release-check.sh`（约定同 CreditDaddy：本地 `npm run release-check` 与 CI 跑同一份脚本）：8 项检查 —— 版本号、JS 语法、单元测试、CHANGELOG 归档与 `[Unreleased]` 残留、tag 与 npm 版本占用（`name@version` 永久不可重用，发布前必须确认没人占）、npm 包清单核对（`files` 白名单之外不得混入）、工作区干净。CI 侧 `release-check.yml` 在手动触发或带 `release` 标签的 PR 上运行
 - **release.yml 打包链路拆成三段**：`pack`（测试 → 校验 tag 与版本一致 → `npm pack`）→ `verify`（**Ubuntu / Windows / macOS 三平台**把 tgz 装进干净环境，`bin` 入口可执行 + 真实拼版并校验输出尺寸 472×315 —— sharp 的平台二进制由 registry 按当前平台自动解析，这一步验的就是它）→ `release`（三平台全绿才创建 GitHub Release）
 - **ci.yml 对齐 imgmark 约定**：新增生产依赖安全公告硬门禁（`npm audit --omit=dev`，显式官方 registry 避免镜像滞后误报）
+
+### 📚 文档
+
+- 架构文档新增第 ④ 层「PDF 封装」与对应的流程图节点，说明为什么 PDF 单独成层（排版是「像素怎么摆」，封装是「像素怎么装进文件」，混在一起会让 `buildSheets` 的返回契约变模糊）
+- 冒烟测试扩到 11 组：引擎直调 9 组（新增旋转版面等价、非法参数报错、cover/position 像素断言、PDF 往返核对）+ CLI 全链路 2 组（新增 PDF 单文件输出）
 
 ---
 

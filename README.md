@@ -2,7 +2,7 @@
 
 # CardSheet
 
-**把若干图片拼成一张可打印的大图：7 种纸张预设 · 毫米级间距与裁切线 · 一张卡片自动铺满整页，打印后按格裁切**
+**把若干图片拼成一张可打印的大图：7 种纸张预设 · 毫米级间距与裁切线 · 旋转/铺满/裁切一次到位，可直接出 PDF，打印后按格裁切**
 
 [![Release](https://img.shields.io/github/v/release/techysy/CardSheet?label=%E7%89%88%E6%9C%AC&color=2563eb)](https://github.com/techysy/CardSheet/releases/latest)
 [![CI](https://img.shields.io/github/actions/workflow/status/techysy/CardSheet/ci.yml?branch=main&label=CI)](https://github.com/techysy/CardSheet/actions/workflows/ci.yml)
@@ -18,7 +18,7 @@
 
 > **典型场景**：一张卡片设计（饮品介绍、名片）要打印后拆成一小张一小张 —— 用 `--repeat` 让它铺满整张 A4，打印、沿裁切线一刀切下去就是成品。
 >
-> 单一运行时依赖 [sharp](https://sharp.pixelplumbing.com/)，零配置、零服务，单条命令出图。
+> 两个运行时依赖：[sharp](https://sharp.pixelplumbing.com/) 做全部图像处理，pdf-lib 只在 `--format pdf` 时用上。零配置、零服务，单条命令出图。
 
 ---
 
@@ -34,11 +34,16 @@
 - **毫米进、像素算**：对外全是毫米，引擎内部只做一次 `mm2px` 换算，杜绝舍入误差在几何里累积。
 - **自动分页**：图多于一页时自动切 `sheet.png` / `sheet-2.png` / `sheet-3.png`…，不用自己算页数。
 - **单图铺满**：`--repeat` 用第一张图铺满整页 —— 同一张卡片拼版的标准做法。
+- **直接出 PDF**：`--format pdf` 把所有页装进一个文件，页面尺寸就是纸张实尺，送打印机不用再对一遍。
+
+**朝向与填充**
+- **旋转**：`--rotate 90/180/270` 先转再排。横图转成竖的、或反过来，**版面会按转完之后的朝向重算**，不会拿原比例硬套。
+- **三种填充**：`contain` 完整放进格子（留白填底色）/ `cover` 铺满并裁掉溢出 / `fill` 拉伸变形铺满。
+- **对齐方位**：`--position top` / `left bottom`… 控制 `contain`、`cover` 时的贴边方向。
 
 **裁切与成品质感**
 - **裁切线**：`--cutlines` 在间距正中画浅灰实线，线宽随 dpi 缩放（约 0.17mm），打印可见、裁得准。
-- **自适应留白**：横图 / 竖图自动 `contain` 居中进单元格，多出的部分填成页面底色，不会拉伸变形。
-- **参数写错就报错**：`--cols abc`、裸写 `--cols`、`--margin` 大到版面不足，都会直接报错 —— 不会静默换一套版面，更不会输出一张全白的纸。
+- **参数写错就报错**：`--cols abc`、裸写 `--cols`、`--rotate 45`、`--margin` 大到版面不足，都会直接报错 —— 不会静默换一套版面，更不会输出一张全白的纸。
 
 ---
 
@@ -63,6 +68,9 @@ cardsheet p1.png p2.png p3.png --paper 4x6 --landscape --gap 3
 
 # A4 摆 2×5 张 86×54mm 名片
 cardsheet front.png --cell 86x54 --paper a4 --cols 2 --rows 5 --cutlines
+
+# 手机拍的横图转正后铺满格子，多页装进一个 PDF
+cardsheet scan.jpg --rotate 90 --fit cover --cutlines --paper a4 --format pdf
 ```
 
 **源码运行**
@@ -97,8 +105,11 @@ cardsheet <图片...> [选项]
 | `--margin 5` | 页边距（毫米，默认 5） |
 | `--repeat` | 用第一张图铺满整页（同一张卡片拼版） |
 | `--cutlines` | 在间距正中画浅灰裁切线 |
-| `--format png` | 输出格式 `png` / `jpeg`（默认 png） |
-| `--quality 90` | jpeg 质量 |
+| `--rotate 90` | 每张图先顺时针转 `0` / `90` / `180` / `270`（默认 0），版面按转完的朝向重算 |
+| `--fit contain` | 缩放方式：`contain` 完整放入（留白填底色）/ `cover` 铺满并裁掉溢出 / `fill` 拉伸变形铺满 |
+| `--position centre` | `contain` / `cover` 时的对齐方位，如 `top`、`left bottom`（默认 `centre`） |
+| `--format png` | 输出格式 `png` / `jpeg` / `pdf`（默认 png）；`pdf` 把所有页装进**一个**文件 |
+| `--quality 90` | jpeg 质量；`--format pdf` 时是页内嵌图的 jpeg 质量 |
 | `--prefix sheet` | 输出文件名前缀（多页自动 `-2`、`-3`…） |
 | `-o 目录` | 输出目录（默认当前目录，不存在会创建） |
 
@@ -142,6 +153,9 @@ const r = await buildSheets({
   cols: null, rows: null, cell: null,
   gap: 2, margin: 5,            // 毫米
   repeat: false, cutlines: false,
+  rotate: 0,                    // 0 / 90 / 180 / 270
+  fit: 'contain',               // contain / cover / fill
+  position: 'centre',           // top / left bottom / entropy …
   background: '#ffffff',
   format: 'png', quality: 90,
 });
@@ -160,6 +174,18 @@ const r = await buildSheets({
 
 `cellW / cellH` 是像素；反算毫米用 `cellW / dpi * 25.4`。另外还导出 `resolvePaper` / `PAPERS` / `mm2px`，方便自己拼版面。
 
+要 PDF 就再走一步 —— 引擎只管像素怎么摆，装文件是另一件事：
+
+```js
+const { pagesToPdf } = require('@techysy/cardsheet');
+
+const pdf = await pagesToPdf(r.pages, {
+  width: r.pageW, height: r.pageH, dpi: r.dpi,
+});
+```
+
+页面按原样嵌入（PNG 走 FlateDecode、JPEG 走 DCTDecode），不重新编码，所以没有二次画质损失。
+
 ### 架构
 
 <div align="center">
@@ -177,8 +203,10 @@ const r = await buildSheets({
 
 ```
 bin/cardsheet.js       CLI 入口：参数解析 → 调引擎 → 写文件 → 打印摘要
-src/sheet.js           排版引擎，全部逻辑（~170 行）
-test/smoke.js          冒烟测试：引擎直调 5 组 + CLI 全链路 1 组，逐像素断言
+src/index.js           包主入口：把 sheet 与 pdf 两个模块再导出一次
+src/sheet.js           排版引擎，全部版面逻辑（~195 行）
+src/pdf.js             PDF 封装：页面原样嵌入，不重新编码
+test/smoke.js          冒烟测试：引擎直调 9 组 + CLI 全链路 2 组，逐像素断言
 scripts/build-diagrams.mjs   由 docs/architecture.md 生成 docs/*.svg
 scripts/release-check.sh     发版前审查（本地与 CI 跑同一份脚本）
 docs/architecture.md   架构文档与 Mermaid 图源码
@@ -192,7 +220,8 @@ docs/architecture.md   架构文档与 Mermaid 图源码
 npm test
 ```
 
-测试不比对图片快照，而是**读像素断言**：裁切线落在间距正中、该处颜色是浅灰 `#c8ccd2`；contain 居中后格子角落是留白、中心是内容；多图超量按 `perPage` 分页。
+测试不比对图片快照，而是**读像素断言**：裁切线落在间距正中、该处颜色是浅灰 `#c8ccd2`；contain 居中后格子角落是留白、中心是内容；cover 铺满后角落也是内容；多图超量按 `perPage` 分页。
+旋转则断言「横图转 90° 的版面 == 直接喂竖图的版面」，PDF 则把文件读回来核对页数和页面尺寸（px × 72/dpi = pt）。
 这样几何改错了会立刻失败，而不会因为编码器版本差异产生假阳性。
 
 CI 在每次 push 到 `main` 和每个 PR 上跑，矩阵覆盖 Ubuntu/Windows × Node 20/22。
@@ -203,8 +232,9 @@ CI 在每次 push 到 `main` 和每个 PR 上跑，矩阵覆盖 Ubuntu/Windows �
 ## 已知限制
 
 - **`--repeat` 只用第一张图**：其余传入的图片会被忽略，双面打印请分两次跑（见[关于双面打印](#关于双面打印)）。
+- **`--rotate` 是全局的，不能逐张给**：所有图片转同一个角度。没做 `图.png:90` 这种逐图语法是因为 Windows 盘符本身带冒号（`C:\a.png`），两种含义会打架 —— 宁可少一个语法，也不用猜一个路径到底指什么。
 - **不支持出血位图**：没有 crop mark / 出血标记，打印前请自行在印厂设置里处理。
-- **横向拼版不自动旋转**：给了 `--landscape` 也只是换纸张方向，不会把图片转 90°。
+- **`--fill` 会拉伸变形**：只在你明确知道后果（比如四四方方的贴纸）时用；默认的 `contain` 永不变形。
 
 ---
 
