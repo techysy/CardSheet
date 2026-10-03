@@ -42,7 +42,8 @@
 - **对齐方位**：`--position top` / `left bottom`… 控制 `contain`、`cover` 时的贴边方向。
 
 **裁切与成品质感**
-- **裁切线**：`--cutlines` 在间距正中画浅灰实线，线宽随 dpi 缩放（约 0.17mm），打印可见、裁得准。
+- **两种裁切线**：`--cutlines` 画浅灰实线，`--cutlines dashed` 画更浅的虚线（3mm 实 / 2mm 空）—— 只需要一点裁切标记、不想线条喧宾夺主时用后者。线宽随 dpi 缩放（约 0.17mm），打印可见、裁得准。
+- **颜色可调**：`--cutline-color '#d0d4da'` 自定义深浅（`#rgb` / `#rrggbb` / `#rrggbbaa`）。
 - **参数写错就报错**：`--cols abc`、裸写 `--cols`、`--rotate 45`、`--margin` 大到版面不足，都会直接报错 —— 不会静默换一套版面，更不会输出一张全白的纸。
 
 ---
@@ -71,6 +72,9 @@ cardsheet front.png --cell 86x54 --paper a4 --cols 2 --rows 5 --cutlines
 
 # 手机拍的横图转正后铺满格子，多页装进一个 PDF
 cardsheet scan.jpg --rotate 90 --fit cover --cutlines --paper a4 --format pdf
+
+# 只要很浅的虚线做裁切标记
+cardsheet card.png --paper 4x6 --repeat --cutlines dashed
 ```
 
 **源码运行**
@@ -104,7 +108,8 @@ cardsheet <图片...> [选项]
 | `--gap 2` | 单元格间距（毫米，默认 2） |
 | `--margin 5` | 页边距（毫米，默认 5） |
 | `--repeat` | 用第一张图铺满整页（同一张卡片拼版） |
-| `--cutlines` | 在间距正中画浅灰裁切线 |
+| `--cutlines` | 在间距正中画裁切线；裸写 = 实线，`--cutlines dashed` = 更浅的虚线 |
+| `--cutline-color` | 自定义裁切线颜色，如 `#d0d4da`（`#rgb` / `#rrggbb` / `#rrggbbaa`） |
 | `--rotate 90` | 每张图先顺时针转 `0` / `90` / `180` / `270`（默认 0），版面按转完的朝向重算 |
 | `--fit contain` | 缩放方式：`contain` 完整放入（留白填底色）/ `cover` 铺满并裁掉溢出 / `fill` 拉伸变形铺满 |
 | `--position centre` | `contain` / `cover` 时的对齐方位，如 `top`、`left bottom`（默认 `centre`） |
@@ -206,7 +211,7 @@ bin/cardsheet.js       CLI 入口：参数解析 → 调引擎 → 写文件 →
 src/index.js           包主入口：把 sheet 与 pdf 两个模块再导出一次
 src/sheet.js           排版引擎，全部版面逻辑（~195 行）
 src/pdf.js             PDF 封装：页面原样嵌入，不重新编码
-test/smoke.js          冒烟测试：引擎直调 9 组 + CLI 全链路 2 组，逐像素断言
+test/smoke.js          冒烟测试：引擎直调 11 组 + CLI 全链路 2 组，逐像素断言
 scripts/build-diagrams.mjs   由 docs/architecture.md 生成 docs/*.svg
 scripts/release-check.sh     发版前审查（本地与 CI 跑同一份脚本）
 docs/architecture.md   架构文档与 Mermaid 图源码

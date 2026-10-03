@@ -12,11 +12,14 @@
 - **三种填充方式** `--fit`：`contain` 完整放进格子（留白填页面底色，默认）/ `cover` 铺满并裁掉溢出 / `fill` 拉伸变形铺满
 - **对齐方位** `--position`：`contain` / `cover` 时的贴边方向（`top`、`left bottom`、`entropy` 等 sharp 支持的方位）
 - **PDF 输出** `--format pdf`：把所有页装进**一个**文件，页面尺寸即纸张实尺（px × 72/dpi = PDF 点）。页面按原样嵌入 —— PNG 走 FlateDecode、JPEG 走 DCTDecode，**不重新编码**，所以没有二次画质损失
+- **虚线裁切线** `--cutlines dashed`：3mm 实 + 2mm 空，默认比实线浅（`#e2e5ea` vs `#c8ccd2`）。虚线仍用一串 `<rect>` 拼而不是 `stroke-dasharray` —— 后者在 1px 线宽上照样被抗锯齿稀释，打印几乎看不见。裸写 `--cutlines` 行为不变（实线）
+- **裁切线颜色可调** `--cutline-color '#d0d4da'`：接受 `#rgb` / `#rrggbb` / `#rrggbbaa`
 - **主入口** `src/index.js`：把 `sheet` 与 `pdf` 两个模块再导出一次，`pagesToPdf` 可以直接从 `@techysy/cardsheet` 取，不必写内部路径
 
 ### 🛡️ 健壮性
 
 - `rotate` / `fit` / `position` / `format` 走白名单校验：`--rotate 45`、`--fit squish`、`--format gif` 一律报错并列出合法值。此前 `--format` 写错会静默退回 png —— 拼完整版才发现拿到的是 png，是很难查的一类错
+- `--cutline-color` 先过一道颜色格式正则：颜色写错时 SVG 的 `fill` 不报错，只会静默渲成黑色，比直接报错更坑
 - PDF 页面类型按**魔数**判定（`embedPng` / `embedJpg`）而不是看文件后缀，并逐页包一层错误信息指明是第几页出的问题
 
 ### 🔧 CI / 工程化
@@ -28,7 +31,7 @@
 ### 📚 文档
 
 - 架构文档新增第 ④ 层「PDF 封装」与对应的流程图节点，说明为什么 PDF 单独成层（排版是「像素怎么摆」，封装是「像素怎么装进文件」，混在一起会让 `buildSheets` 的返回契约变模糊）
-- 冒烟测试扩到 11 组：引擎直调 9 组（新增旋转版面等价、非法参数报错、cover/position 像素断言、PDF 往返核对）+ CLI 全链路 2 组（新增 PDF 单文件输出）
+- 冒烟测试扩到 13 组：引擎直调 11 组（新增旋转版面等价、非法参数报错、cover/position 像素断言、PDF 往返核对、虚线节奏与深浅、非法裁切线参数）+ CLI 全链路 2 组（新增 PDF 单文件输出）
 
 ---
 

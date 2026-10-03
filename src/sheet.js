@@ -54,22 +54,42 @@ function parseWxH(spec, what) {
   return [Number(m[1]), Number(m[2])];
 }
 
-/** 间距正中的裁切线：列间竖线、行间横线，浅灰；线宽随 dpi（约 0.17mm）并取整像素画 rect
- * 简单可靠的 SVG 实现 */
-function cutlineSvg(pw, ph, m, nCols, nRows, cellW, cellH, g, dpi) {
+/** 裁切线样式。虚线默认比实线更浅：虚线本身信息量就低，再加深反而喧宾夺主 */
+const CUTLINE_STYLES = { solid: '#c8ccd2', dashed: '#e2e5ea' };
+
+/** 间距正中的裁切线：列间竖线、行间横线；线宽随 dpi（约 0.17mm）并取整像素画 rect
+ * 简单可靠的 SVG 实现。dashed 不用 stroke-dasharray，而是用一串小 rect 拼 ——
+ * 1px 线宽的 stroke 会被抗锯齿稀释成半透明，打印几乎看不见，画实心矩形才落得住。 */
+function cutlineSvg(pw, ph, m, nCols, nRows, cellW, cellH, g, dpi, style = 'solid', color) {
+  const fill = color || CUTLINE_STYLES[style] || CUTLINE_STYLES.solid;
   const wLine = Math.max(1, Math.round(dpi / 150));
+  // 3mm 实 + 2mm 空，和裁纸刀上的刻度一个量级
+  const on = mm2px(3, dpi), off = mm2px(2, dpi);
+  const dashed = style === 'dashed';
+  /** 沿一条线按 on/off 交替铺短矩形；rectAt(沿线的起点, 已走距离, 本段长度) 负责摆方向 */
+  const seg = (start, len, rectAt) => {
+    let s = '';
+    for (let p = 0; p < len; p += on + off) {
+      s += rectAt(start, p, Math.min(on, len - p));
+    }
+    return s;
+  };
+  const bar = (x, y, w, h) => `<rect x="${x}" y="${y}" width="${w}" height="${h}"/>`;
+
   let parts = '';
   for (let c = 1; c < nCols; c++) {
     const cx = m + c * (cellW + g) - g / 2;
-    const x0 = Math.round(cx - wLine / 2);
-    parts += `<rect x="${x0}" y="${m}" width="${wLine}" height="${ph - 2 * m}" fill="#c8ccd2"/>`;
+    const x0 = Math.round(cx - wLine / 2), len = ph - 2 * m;
+    // 竖线：x 固定，沿 y 走
+    parts += dashed ? seg(m, len, (y, p, l) => bar(x0, y + p, wLine, l)) : bar(x0, m, wLine, len);
   }
   for (let r = 1; r < nRows; r++) {
     const cy = m + r * (cellH + g) - g / 2;
-    const y0 = Math.round(cy - wLine / 2);
-    parts += `<rect x="${m}" y="${y0}" width="${pw - 2 * m}" height="${wLine}" fill="#c8ccd2"/>`;
+    const y0 = Math.round(cy - wLine / 2), len = pw - 2 * m;
+    // 横线：y 固定，沿 x 走
+    parts += dashed ? seg(m, len, (x, p, l) => bar(x + p, y0, l, wLine)) : bar(m, y0, len, wLine);
   }
-  return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${pw}" height="${ph}">${parts}</svg>`);
+  return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${pw}" height="${ph}"><g fill="${fill}">${parts}</g></svg>`);
 }
 
 /**
@@ -85,7 +105,8 @@ function cutlineSvg(pw, ph, m, nCols, nRows, cellW, cellH, g, dpi) {
  *   gap      单元格间距（毫米，默认 2）
  *   margin   页边距（毫米，默认 5）
  *   repeat   用第一张图铺满整页（同一张卡片拼版）；不给则按顺序逐格排，超量自动分页
- *   cutlines 在间距正中画裁切线
+ *   cutlines true | 'solid' | 'dashed'，在间距正中画裁切线（默认色见 CUTLINE_STYLES）
+ *   cutlineColor 自定义裁切线颜色（#rgb / #rrggbb / #rrggbbaa），不给则用样式默认色
  *   rotate   每张图先顺时针转 0/90/180/270（默认 0）。会改变宽高比，自动排布按转完之后的朝向算
  *   fit      contain 完整放进格子（留白填背景色）| cover 铺满格子并裁掉溢出 | fill 拉伸变形铺满（默认 contain）
  *   position cover/contain 时的对齐方式，如 top / left / centre（默认 centre）
@@ -98,7 +119,7 @@ async function buildSheets(o = {}) {
     images, paper = 'a4', dpi = 300, landscape = false,
     cols = null, rows = null, cell = null,
     gap = 2, margin = 5,
-    repeat = false, cutlines = false,
+    repeat = false, cutlines = false, cutlineColor = null,
     rotate = 0, fit = 'contain', position = 'centre',
     background = '#ffffff', format = 'png', quality = 90,
   } = o;
@@ -115,6 +136,17 @@ async function buildSheets(o = {}) {
   const posIn = String(position).toLowerCase();
   if (!FIT_POSITIONS.includes(posIn)) throw new Error(`position 仅支持 ${FIT_POSITIONS.join(' / ')}，收到：${position}`);
   const pos = posIn === 'center' ? 'centre' : posIn;
+
+  // 裸写 --cutlines 会让参数解析器把它置成布尔 true，这里归一成 'solid'（v0.1.0 的行为）
+  let cutStyle = null;
+  if (cutlines) {
+    cutStyle = cutlines === true ? 'solid' : String(cutlines).toLowerCase();
+    if (!CUTLINE_STYLES[cutStyle]) throw new Error(`cutlines 仅支持 ${Object.keys(CUTLINE_STYLES).join(' / ')}，收到：${cutlines}`);
+  }
+  // 颜色交给 SVG 的 fill，写错不会报错、只会静默渲成黑色 —— 所以这里先拦一道
+  if (cutlineColor && !/^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/.test(String(cutlineColor).trim())) {
+    throw new Error(`cutline-color 应为 #rgb / #rrggbb / #rrggbbaa，收到：${cutlineColor}`);
+  }
   const [paperWmm, paperHmm] = resolvePaper(paper, landscape);
   const pw = mm2px(paperWmm, dpiN);
   const ph = mm2px(paperHmm, dpiN);
@@ -193,11 +225,11 @@ async function buildSheets(o = {}) {
         .png().toBuffer();
       comps.push({ input: buf, left: m + c * (cellW + g), top: m + r * (cellH + g) });
     }
-    if (cutlines) comps.push({ input: cutlineSvg(pw, ph, m, nCols, nRows, cellW, cellH, g, dpiN), left: 0, top: 0 });
+    if (cutStyle) comps.push({ input: cutlineSvg(pw, ph, m, nCols, nRows, cellW, cellH, g, dpiN, cutStyle, cutlineColor), left: 0, top: 0 });
     const pipeline = sharp({ create: { width: pw, height: ph, channels: 3, background } }).composite(comps);
     pages.push(await (String(format).toLowerCase() === 'jpeg' ? pipeline.jpeg({ quality: Number(quality) || 90 }) : pipeline.png()).toBuffer());
   }
   return { pages, pageW: pw, pageH: ph, cols: nCols, rows: nRows, cellW, cellH, perPage, pageCount, dpi: dpiN };
 }
 
-module.exports = { buildSheets, resolvePaper, PAPERS, mm2px };
+module.exports = { buildSheets, resolvePaper, PAPERS, mm2px, CUTLINE_STYLES };

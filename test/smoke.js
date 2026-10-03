@@ -29,6 +29,13 @@ async function mean(buf) {
   const { data } = await sharp(buf).greyscale().raw().toBuffer({ resolveWithObject: true });
   return data.reduce((a, v) => a + v, 0) / data.length;
 }
+/** 一次解码取一列像素的 R 值（扫虚线用；逐点调 px() 会把同一张图反复解码上百次） */
+async function columnR(buf, x, y0, y1) {
+  const { data, info } = await sharp(buf).raw().toBuffer({ resolveWithObject: true });
+  const out = [];
+  for (let y = y0; y < y1; y++) out.push(data[(y * info.width + x) * info.channels]);
+  return out;
+}
 
 async function main() {
   // fixtures：横图（亮）与竖图（暗）
@@ -124,6 +131,41 @@ async function main() {
     assert(w === 255, `无裁切线时同一位置应留白（${w}）`);
   });
 
+  await t('裁切线虚线：间距正中仍是虚线，且比实线更浅', async () => {
+    const geo = { paper: '120x80', dpi: 100, cell: '50x50', margin: 4, gap: 2, repeat: true };
+    const base = { images: [{ buffer: imgA }], ...geo };
+    // 第一列间距中心 x = margin + cellW + gap/2 = 16+197+4 = 217；沿它从上往下扫
+    const scan = async (opts) => {
+      const r = await buildSheets({ ...base, ...opts });
+      return columnR(r.pages[0], 217, 16, 315 - 16);
+    };
+    const [solid, dashed] = [await scan({ cutlines: true }), await scan({ cutlines: 'dashed' })];
+
+    // 实线：一路到底，中间不能有断点
+    assert(solid.every((v) => v < 250), '实线裁切线不该有断点');
+    // 虚线：既有线段也有空隙，且空隙落在白底上
+    const hits = dashed.filter((v) => v < 250).length;
+    const gaps = dashed.filter((v) => v >= 250).length;
+    assert(hits > 20 && gaps > 20, `虚线应同时有实线段与空隙（实 ${hits} / 空 ${gaps}）`);
+    // 虚线的默认色比实线浅 —— 「很浅的虚线」是这个样式的默认形态，不用额外传参
+    const linePx = dashed.findIndex((v) => v < 250);
+    assert(dashed[linePx] > solid[linePx], `虚线应比实线浅（虚 ${dashed[linePx]} vs 实 ${solid[linePx]}）`);
+
+    // 自定义颜色确实生效
+    const custom = await scan({ cutlines: 'dashed', cutlineColor: '#ff0000' });
+    assert.strictEqual(custom[linePx], 255, '自定义为 #ff0000 时虚线像素应是纯红');
+  });
+  await t('非法 cutlines 样式 / 颜色直接报错', async () => {
+    const base = { images: [{ buffer: imgA }], paper: 'a4', dpi: 100, repeat: true, cutlines: true };
+    await assert.rejects(
+      () => buildSheets({ ...base, cutlines: 'dotted' }),
+      (e) => { assert(e.message.includes('cutlines'), `应点明是 cutlines，实际：${e.message}`); return true; },
+    );
+    await assert.rejects(
+      () => buildSheets({ ...base, cutlineColor: '浅灰' }),
+      (e) => { assert(e.message.includes('cutline-color'), `应点明是 cutline-color，实际：${e.message}`); return true; },
+    );
+  });
   await t('rotate 90：先转后缩，版面按转完的朝向算', async () => {
     // 契约：自动排布用的宽高比必须是「旋转之后」的。imgA 是 400×250 横图，转 90° 就是
     // 250×400 竖图 —— 所以它的版面必须和直接喂 imgB 时一模一样。

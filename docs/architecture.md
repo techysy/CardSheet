@@ -163,6 +163,15 @@ flowchart TB
 **裁切线为什么用 SVG `<rect>` 而不是 `<line>`**：线宽按 `dpi / 150` 算（约 0.17mm），再 `Math.round` 成整数像素后画成矩形。
 直接 stroke 一条 1px 线会被抗锯齿稀释成半透明，打印出来几乎看不见；画成实心矩形则保证落到纸上是一条实实在在的浅灰线。
 
+**虚线也用一串 `<rect>`，不用 `stroke-dasharray`**：同样的道理 —— dasharray 画出来的每一段仍然走 stroke，
+在 1px 线宽上照样被抗锯齿稀释。所以 `dashed` 样式是在线的方向上按「3mm 实 + 2mm 空」循环摆短矩形。
+`seg(start, len, rectAt)` 把「沿线的起点 / 已走距离 / 本段长度」交给回调拼字符串，横竖两个方向只差一行。
+
+**虚线的默认色比实线浅**（`#e2e5ea` vs `#c8ccd2`）。虚线本身信息量就低，再画得和实线一样深就喧宾夺主了；
+"只需要很浅的虚线" 是默认形态而不是要额外传参的特例。想自己定用 `cutlineColor` ——
+它会先被一道 `#rgb` / `#rrggbb` / `#rrggbbaa` 的正则拦一下，因为颜色写错时 SVG 的 `fill` 不会报错，
+只会静默渲成黑色，比报错更坑。
+
 **裁切线只画在间距正中**：位置是 `margin + c·(cellW + gap) - gap / 2`。
 这意味着 `--gap 0` 时线画在格子边界上（`gap/2 = 0`），此时线条会压在图片上，需要注意。
 
@@ -195,9 +204,9 @@ PDF 1.x 本来就能直接装 DCTDecode（JPEG）和 Flate（PNG），所以这�
 ```
 bin/cardsheet.js    CLI 入口：参数解析 → 调引擎 → 写文件 → 打印摘要
 src/index.js        包主入口，把 sheet 与 pdf 再导出一次
-src/sheet.js        排版引擎，全部版面逻辑；导出 buildSheets / resolvePaper / PAPERS / mm2px
+src/sheet.js        排版引擎，全部版面逻辑；导出 buildSheets / resolvePaper / PAPERS / mm2px / CUTLINE_STYLES
 src/pdf.js          PDF 封装，只做格式转换；导出 pagesToPdf / px2pt
-test/smoke.js       冒烟测试：引擎直调 9 组 + CLI 全链路 2 组，逐像素断言
+test/smoke.js       冒烟测试：引擎直调 11 组 + CLI 全链路 2 组，逐像素断言
 docs/               架构文档与图
 ```
 
@@ -216,7 +225,8 @@ const r = await buildSheets({
   cols: null, rows: null,       // 与 cell 的优先级见上文决策树
   cell: null,
   gap: 2, margin: 5,            // 毫米
-  repeat: false, cutlines: false,
+  repeat: false, cutlines: false,   // true | 'solid' | 'dashed'
+  cutlineColor: null,               // '#rgb' / '#rrggbb' / '#rrggbbaa'，不给则用样式默认色
   rotate: 0,                    // 0 / 90 / 180 / 270，版面按转完的朝向重算
   fit: 'contain',               // contain / cover / fill
   position: 'centre',           // top / left bottom / entropy …

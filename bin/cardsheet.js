@@ -18,7 +18,8 @@
  *   --gap 2           单元格间距（毫米，默认 2）
  *   --margin 5        页边距（毫米，默认 5）
  *   --repeat          用第一张图铺满整页（同一张卡片拼版的场景）
- *   --cutlines        在间距正中画裁切线
+ *   --cutlines [solid|dashed]  在间距正中画裁切线；裸写（不带样式）等同 solid
+ *   --cutline-color #e2e5ea  自定义裁切线颜色，不给则用样式默认色（虚线比实线更浅）
  *   --rotate 90       每张图先顺时针转 0/90/180/270（默认 0）
  *   --fit contain     缩放方式：contain 完整放入 / cover 铺满裁掉溢出 / fill 拉伸变形（默认 contain）
  *   --position centre  cover 时的对齐方式，如 top / left bottom（默认 centre）
@@ -68,6 +69,7 @@ function usage() {
   cardsheet front.png back.png --paper a4 --cols 2 --rows 5  # 双面卡片各占一页 2×5
   cardsheet p1.png p2.png p3.png --paper 4x6 --landscape --gap 3
   cardsheet scan.jpg --rotate 90 --fit cover --cutlines     # 转正后铺满裁掉溢出
+  cardsheet card.png --repeat --cutlines dashed             # 只要很浅的虚线做裁切标记
   cardsheet *.png --paper a4 --format pdf --prefix 名片     # 多页装进一个 PDF
 `);
 }
@@ -137,7 +139,9 @@ async function main() {
     gap: args.gap === undefined ? 2 : parsePositiveNumber(args.gap, 'gap'),
     margin: args.margin === undefined ? 5 : parsePositiveNumber(args.margin, 'margin'),
     repeat: !!args.repeat,
-    cutlines: !!args.cutlines,
+    // 裸写 --cutlines → true；`--cutlines dashed` → 'dashed'，两种引擎都认
+    cutlines: args.cutlines === undefined ? false : args.cutlines,
+    cutlineColor: args['cutline-color'] || null,
     rotate: args.rotate === undefined ? 0 : parsePositiveNumber(args.rotate, 'rotate'),
     fit: args.fit || 'contain',
     position: args.position || 'centre',
@@ -167,7 +171,7 @@ async function main() {
   const cellMmH = (result.cellH / result.dpi * 25.4).toFixed(1);
   const extras = [
     args.repeat ? '单图重复铺满' : '',
-    args.cutlines ? '已画裁切线' : '',
+    args.cutlines ? `已画${args.cutlines === 'dashed' ? '虚' : ''}裁切线` : '',
     sheetOpts.rotate ? `已旋转 ${sheetOpts.rotate}°` : '',
     sheetOpts.fit !== 'contain' ? `填充 ${sheetOpts.fit}` : '',
   ].filter(Boolean).join(' · ');
