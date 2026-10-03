@@ -4,7 +4,9 @@
 
 **把若干图片拼成一张可打印的大图：7 种纸张预设 · 毫米级间距与裁切线 · 一张卡片自动铺满整页，打印后按格裁切**
 
+[![Release](https://img.shields.io/github/v/release/techysy/CardSheet?label=%E7%89%88%E6%9C%AC&color=2563eb)](https://github.com/techysy/CardSheet/releases/latest)
 [![CI](https://img.shields.io/github/actions/workflow/status/techysy/CardSheet/ci.yml?branch=main&label=CI)](https://github.com/techysy/CardSheet/actions/workflows/ci.yml)
+[![Downloads](https://img.shields.io/github/downloads/techysy/CardSheet/total?label=%E4%B8%8B%E8%BD%BD&color=16a34a)](https://github.com/techysy/CardSheet/releases)
 [![npm](https://img.shields.io/npm/v/@techysy/cardsheet?label=npm&color=CB3837&logo=npm&logoColor=white)](https://www.npmjs.com/package/@techysy/cardsheet)
 [![Platform](https://img.shields.io/badge/%E5%B9%B3%E5%8F%B0-Windows%20%7C%20macOS%20%7C%20Linux-6b7280)](#快速开始)
 [![Node](https://img.shields.io/badge/Node.js-%E2%89%A5%2020.9-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
