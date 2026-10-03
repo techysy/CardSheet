@@ -89,8 +89,8 @@ async function buildSheets(o = {}) {
   } = o;
   if (!Array.isArray(images) || !images.length) throw new Error('未提供图片');
 
+  // dpi 夹在 [36, 1200]：太低的没法打印，太高的画布像素会失控
   const dpiN = Math.max(36, Math.min(1200, Number(dpi) || 300));
-  if (dpiN < 36) throw new Error(`分辨率 ${dpi} 过低，最小 36dpi`);
   const [paperWmm, paperHmm] = resolvePaper(paper, landscape);
   const pw = mm2px(paperWmm, dpiN);
   const ph = mm2px(paperHmm, dpiN);
@@ -132,13 +132,20 @@ async function buildSheets(o = {}) {
     const first = await sharp(images[0].buffer).metadata();
     const aspect = (first.width || 3) / (first.height || 2);
     const minCell = mm2px(15, dpiN);
+    const maxCols = Math.max(1, Math.floor((pw - 2 * m + g) / (minCell + g)));
     let best = null;
-    for (let c = 1; c <= Math.max(1, Math.floor((pw - 2 * m + g) / (minCell + g))); c++) {
+    // 从多到少枚举列数，提前发现最优解就退出（减少计算量）
+    for (let c = maxCols; c >= 1; c--) {
       const cw = Math.floor((pw - 2 * m - (c - 1) * g) / c);
       const chh = Math.round(cw / aspect);
       const r = Math.max(1, Math.floor((ph - 2 * m + g) / (chh + g)));
-      if (!best || c * r > best.count) best = { c, r, cw, ch: chh, count: c * r };
+      const count = c * r;
+      // 只更新面积更大的方案（保留列少的平局结果）
+      if (!best || count > best.count) {
+        best = { c, r, cw, ch: chh, count };
+      }
     }
+    if (!best) throw new Error('无法计算版面：请检查纸张/间距设置');
     nCols = best.c; nRows = best.r; cellW = best.cw; cellH = best.ch;
   }
   if (cellW < 8 || cellH < 8) throw new Error('单元格尺寸过小（<8px），请检查纸张/行列/间距设置');

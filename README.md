@@ -177,10 +177,11 @@ npm test
 改了架构图请编辑 `docs/architecture.md` 里的 Mermaid 代码块，然后：
 
 ```bash
-node scripts/build-diagrams.mjs
+npm run docs
 ```
 
 `docs/*.svg` 是产物，不要直接编辑。
+mermaid-cli 会顺带装一份 chromium，其实用不上 —— 脚本会复用本机已装的 Chrome / Edge；不需要那份下载的话装依赖时加 `PUPPETEER_SKIP_DOWNLOAD=1`。
 
 ## 📄 许可证
 

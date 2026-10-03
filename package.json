@@ -23,6 +23,9 @@
   "dependencies": {
     "sharp": "^0.35.4"
   },
+  "devDependencies": {
+    "@mermaid-js/mermaid-cli": "^11.4.0"
+  },
   "keywords": [
     "print",
     "imposition",

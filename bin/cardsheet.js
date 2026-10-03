@@ -39,15 +39,17 @@ function parsePositiveNumber(val, name) {
   return n;
 }
 
-/** 解析数值或布尔值：若下一个参数不是选项且是数字则为值，否则为 true */
-function nextAsNumberOrTrue(argv, i) {
-  const next = argv[i + 1];
-  if (next === undefined || next.startsWith('--') || (next.startsWith('-') && next !== '-' && isNaN(Number(next)))) {
-    return null; // 无值，视为布尔 flag
-  }
-  const n = Number(next);
-  if (!isNaN(n)) { i++; return n; }
-  throw new Error(`--${argv[i].slice(2)} 期望数值参数：${next}`);
+/**
+ * 解析「个数」类参数（--cols / --rows）：必须是显式给出的正整数。
+ *
+ * 裸写 `--cols`（不带值）时 parseArgs 会把它置为布尔 true，而 `Number(true) === 1`，
+ * 于是 parsePositiveNumber 会把缺值的 flag 悄悄当成「1 列」。这里单独拦掉。
+ */
+function parseCount(val, name) {
+  if (val === true) throw new Error(`--${name} 需要一个正整数，例：--${name} 3`);
+  const n = Number(val);
+  if (!Number.isInteger(n) || n < 1) throw new Error(`--${name} 必须是正整数，收到：${val}`);
+  return n;
 }
 
 function usage() {
@@ -114,8 +116,8 @@ async function main() {
     paper: args.sheet || args.paper || 'a4',
     dpi: parsePositiveNumber(args.dpi ?? 300, 'dpi'),
     landscape: !!args.landscape,
-    cols: args.cols !== undefined ? parseInt(args.cols, 10) : null,
-    rows: args.rows !== undefined ? parseInt(args.rows, 10) : null,
+    cols: args.cols !== undefined ? parseCount(args.cols, 'cols') : null,
+    rows: args.rows !== undefined ? parseCount(args.rows, 'rows') : null,
     cell: args.cell || null,
     gap: args.gap === undefined ? 2 : parsePositiveNumber(args.gap, 'gap'),
     margin: args.margin === undefined ? 5 : parsePositiveNumber(args.margin, 'margin'),

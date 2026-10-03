@@ -8,54 +8,41 @@ cardsheet 只有一个运行时依赖（[sharp](https://sharp.pixelplumbing.com/
 ## 总览
 
 ```mermaid
+%%{init: {"flowchart": {"wrappingWidth": 460}, "themeVariables": {"fontSize": "15px"}}}%%
 flowchart TB
     classDef cli   fill:#1f6feb22,stroke:#1f6feb,color:#0b2e63
     classDef eng   fill:#8250df22,stroke:#8250df,color:#3b1a70
     classDef lib   fill:#1a7f3722,stroke:#1a7f37,color:#0d3d1c
     classDef io    fill:#bf870022,stroke:#bf8700,color:#5c3c00
 
-    U([命令行 / Node 调用]):::io
+    IN(["图片文件"]):::io
 
     subgraph L1["① CLI 层 · bin/cardsheet.js"]
         direction TB
-        A1[parseArgs<br/>参数解析]:::cli
-        A2[fs.readFileSync<br/>逐图读入 Buffer]:::cli
-        A3[mkdirSync + writeFileSync<br/>落盘 sheet.png / sheet-2.png]:::cli
-        A4[控制台摘要<br/>页数 · 网格 · 单元格毫米]:::cli
+        A["<b>parseArgs</b> 参数解析<br/>读图 → { buffer, name }<br/>mkdirSync + writeFileSync<br/>控制台摘要"]:::cli
     end
 
     subgraph L2["② 引擎层 · src/sheet.js · buildSheets()"]
         direction TB
-        B1[resolvePaper / parseWxH / mm2px<br/>规格 → 毫米 → 像素]:::eng
-        B2[solveLayout<br/>版面求解：cols × rows × cell]:::eng
-        B3[paginate<br/>repeat 铺满 或 顺序流式]:::eng
-        B4[render<br/>contain 缩放 + 逐格 composite]:::eng
-        B5[cutlineSvg<br/>间距正中叠一层裁切线]:::eng
-        B6[encode<br/>png / jpeg]:::eng
+        B["<b>mm2px</b> 规格 → 毫米 → 像素<br/><b>solveLayout</b> cols × rows × cell<br/><b>paginate</b> repeat 铺满 / 顺序分页<br/><b>render</b> contain 缩放 + 逐格 composite<br/><b>cutlineSvg</b> 间距正中叠一层裁切线<br/><b>encode</b> png / jpeg"]:::eng
     end
 
     subgraph L3["③ 图像层 · sharp (libvips)"]
         direction TB
-        C1[metadata 读原图宽高]:::lib
-        C2[resize fit:contain]:::lib
-        C3[create 空白画布]:::lib
-        C4[composite 叠加]:::lib
-        C5[png / jpeg 编码]:::lib
+        C["<b>metadata</b> 读原图宽高<br/><b>resize</b> fit:contain<br/><b>create</b> 空白画布<br/><b>composite</b> 逐格叠加<br/>png / jpeg 编码"]:::lib
     end
 
-    U --> A1 --> A2 --> B1
-    B1 --> B2 --> B3 --> B4
-    B2 -.首图宽高比.-> C1
-    B4 --> C2 --> C3
-    B4 --> C4
-    B3 -->|cutlines| B5 --> C4
-    C4 --> B6 --> C5
-    C5 --> A3 --> A4
-    B1 -.导出.-> E([resolvePaper / PAPERS / mm2px]):::io
+    OUT(["pages: Buffer[]<br/>sheet.png / sheet-2.png"]):::io
+
+    IN --> A
+    A -- "images" --> B
+    B -- "渲染每页" --> C
+    C -- "pages" --> OUT
 ```
 
 **边界约定**：CLI 层不认识毫米，引擎层不认识文件系统。
 `buildSheets` 的输入已经是 `Buffer`、输出是 `Buffer[]`，中间不碰磁盘 —— 这样引擎能直接嵌进别的程序（Web 服务、Electron、另一个 CLI）而不必改一行。
+引擎另外还导出 `resolvePaper` / `PAPERS` / `mm2px`，供外部自己拼版面。
 
 ## 坐标系与单位
 
@@ -81,28 +68,34 @@ mm2px = (mm, dpi) => Math.max(1, Math.round(mm / 25.4 * dpi))
 四条路径按 `--cell` → `--cols --rows` → 二选一 → 都不给 的优先级短路：
 
 ```mermaid
+%%{init: {"flowchart": {"wrappingWidth": 420}, "themeVariables": {"fontSize": "15px"}}}%%
 flowchart TB
     classDef q    fill:#bf870022,stroke:#bf8700,color:#5c3c00
     classDef out  fill:#1a7f3722,stroke:#1a7f37,color:#0d3d1c
 
     S([开始]):::q
-    Q1{--cell?}:::q
-    Q2{--cols 且 --rows?}:::q
-    Q3{只给一个?}:::q
+    Q1{给了 --cell ?}:::q
+    Q2{给了 --cols 和 --rows ?}:::q
+    Q3{只给了其中一个 ?}:::q
 
-    A1["cell 给定<br/>行列按纸张反推<br/>floor（版心 + gap）/（cell + gap）"]:::out
-    A2["行列给定<br/>单元格平分版心<br/>floor（版心 − (n−1)·gap）/ n"]:::out
-    A3[首图宽高比定另一边<br/>另一方向反推能排下几行/几列]:::out
-    A4[枚举列数 1..N<br/>以首图宽高比算行数<br/>取 每页张数最多，并列取列少者]:::out
+    A1["<b>cell 给定</b><br/>行列按纸张反推<br/>floor（版心 + gap）/（cell + gap）"]:::out
+    A2["<b>行列给定</b><br/>单元格平分版心<br/>floor（版心 − (n−1)·gap）/ n"]:::out
+    A3["<b>只给一个</b><br/>首图宽高比定另一边<br/>另一方向反推能排下几行 / 几列"]:::out
+    A4["<b>全自动</b><br/>枚举列数 1..N，以首图宽高比算行数<br/>取每页张数最多，并列取列少者"]:::out
 
-    R[cols, rows, cellW, cellH]:::out
+    R([cols · rows · cellW · cellH]):::out
+
     S --> Q1
-    Q1 -->|是| A1 --> R
+    Q1 -->|是| A1
     Q1 -->|否| Q2
-    Q2 -->|是| A2 --> R
+    Q2 -->|是| A2
     Q2 -->|否| Q3
-    Q3 -->|是| A3 --> R
-    Q3 -->|否| A4 --> R
+    Q3 -->|是| A3
+    Q3 -->|否| A4
+    A1 --> R
+    A2 --> R
+    A3 --> R
+    A4 --> R
 ```
 
 **全自动为什么这样选**：用户只给了一堆图和一个纸张，想要的是「一页塞最多」。
@@ -173,8 +166,7 @@ const r = await buildSheets({
 改了图之后重新生成：
 
 ```bash
-node scripts/build-diagrams.mjs
+npm run docs
 ```
 
-脚本用 `npx @mermaid-js/mermaid-cli` 现取渲染器（它依赖 chromium，太重，不进 `devDependencies`），并优先复用本机已装的 Chrome / Edge，省掉每次重新下载浏览器。
 **改图只需要改本文件的 Mermaid 代码块**，不要直接编辑 `docs/*.svg` —— 那些是产物，下次生成会被覆盖。
