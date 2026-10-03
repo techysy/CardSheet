@@ -31,6 +31,8 @@
 - **发版前审查** `scripts/release-check.sh`（约定同 CreditDaddy：本地 `npm run release-check` 与 CI 跑同一份脚本）：8 项检查 —— 版本号、JS 语法、单元测试、CHANGELOG 归档与 `[Unreleased]` 残留、tag 与 npm 版本占用（`name@version` 永久不可重用，发布前必须确认没人占）、npm 包清单核对（`files` 白名单之外不得混入）、工作区干净。CI 侧 `release-check.yml` 在手动触发或带 `release` 标签的 PR 上运行
 - **release.yml 打包链路拆成三段**：`pack`（测试 → 校验 tag 与版本一致 → `npm pack`）→ `verify`（**Ubuntu / Windows / macOS 三平台**把 tgz 装进干净环境，`bin` 入口可执行 + 真实拼版并校验输出尺寸 472×315 —— sharp 的平台二进制由 registry 按当前平台自动解析，这一步验的就是它）→ `release`（三平台全绿才创建 GitHub Release）
 - **ci.yml 对齐 imgmark 约定**：新增生产依赖安全公告硬门禁（`npm audit --omit=dev`，显式官方 registry 避免镜像滞后误报）
+- **修 release.yml 试装步骤**：`npm install dist/xxx.tgz` 会被 npm 当成 GitHub 简写（`<user>/<repo>` 形式）转成 `ssh://git@github.com/dist/...`，本机报 `EALLOWGIT`、CI 上则静默走 git 路线死在 `publickey` 上 —— 改用 `file:` 前缀。三平台试装这关是 v0.1.0 发布**之后**才加的，v0.2.0 是它第一次真跑，当场三平台全挂
+- **verify 补一步真跑 `--format pdf`**：PDF 是本版新增的输出路径，依赖 pdf-lib。旧步骤只跑不含 PDF 的拼版，pdf-lib 就算漏在 `dependencies` 里也照样全绿，只有 PDF 那条路会在运行时炸
 
 ### 📚 文档
 

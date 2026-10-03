@@ -80,7 +80,12 @@ jobs:
         shell: bash
         run: |
           npm init -y >/dev/null
-          npm install --no-audit --no-fund dist/techysy-cardsheet-*.tgz
+          # 必须带 file: 前缀。光写 dist/xxx.tgz 会被 npm 当成 GitHub 简写
+          # （<user>/<repo> 形式）→ ssh://git@github.com/dist/xxx.tgz → git@github.com:
+          # Permission denied (publickey)。本机没有 EALLOWGIT 时会直接报错，
+          # 上了 CI（预装 git）反而是静默走 git 路线然后死在 publickey 上，更难查。
+          # 顺带用 $(ls ...) 替掉裸 glob：glob 匹配不到时会原样传进 npm，报错信息没法看。
+          npm install --no-audit --no-fund "file:$(ls dist/*.tgz)"
 
       - name: bin 入口可执行
         shell: bash
@@ -94,6 +99,15 @@ jobs:
           node -e "require('sharp')({ create: { width: 400, height: 250, channels: 3, background: '#e0e0e0' } }).png().toFile('card.png')"
           npx --no-install cardsheet card.png --sheet 120x80 --dpi 100 --repeat --cutlines -o out
           node -e "require('sharp')('out/sheet.png').metadata().then((m) => { if (m.width !== 472 || m.height !== 315) throw new Error('输出尺寸不符: ' + m.width + 'x' + m.height); console.log('✓ ' + m.width + 'x' + m.height); })"
+
+      # PDF 是本版新增的输出路径，依赖 pdf-lib。如果它漏在 dependencies 里，
+      # 上面的步骤照样全绿（旧路径不碰它），只有 --format pdf 会在运行时炸 ——
+      # 所以这里必须真的跑一次，而不是只装上就算过。
+      - name: PDF 输出可用（验 pdf-lib 真的打进了包）
+        shell: bash
+        run: |
+          npx --no-install cardsheet card.png --sheet 120x80 --dpi 100 --cell 40x30 --cutlines dashed --format pdf -o out-pdf
+          node -e "const b=require('fs').readFileSync('out-pdf/sheet.pdf'); if (b.subarray(0,5).toString()!=='%PDF-') throw new Error('不是 PDF'); console.log('✓ ' + b.length + ' bytes');"
 
   release:
     needs: [pack, verify]
