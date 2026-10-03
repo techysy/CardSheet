@@ -29,6 +29,10 @@ jobs:
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
 
+      # 生产依赖的安全公告硬门禁（约定同 imgmark）；显式官方源，避免镜像滞后误报
+      - name: Check production advisories
+        run: npm audit --omit=dev --registry=https://registry.npmjs.org
+
       - name: Syntax check
         shell: bash
         run: |

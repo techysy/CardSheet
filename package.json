@@ -11,6 +11,7 @@
     "check": "node --check bin/cardsheet.js && node --check src/sheet.js && node --check test/smoke.js",
     "docs": "node scripts/build-diagrams.mjs",
     "pack:check": "npm pack --dry-run",
+    "release-check": "bash scripts/release-check.sh",
     "publish:npm": "npm publish --access public --registry=https://registry.npmjs.org",
     "release": "npm run check && npm test && npm version patch && npm run publish:npm && git push --follow-tags",
     "release:minor": "npm run check && npm test && npm version minor && npm run publish:npm && git push --follow-tags",

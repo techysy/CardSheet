@@ -180,6 +180,7 @@ bin/cardsheet.js       CLI 入口：参数解析 → 调引擎 → 写文件 →
 src/sheet.js           排版引擎，全部逻辑（~170 行）
 test/smoke.js          冒烟测试：引擎直调 5 组 + CLI 全链路 1 组，逐像素断言
 scripts/build-diagrams.mjs   由 docs/architecture.md 生成 docs/*.svg
+scripts/release-check.sh     发版前审查（本地与 CI 跑同一份脚本）
 docs/architecture.md   架构文档与 Mermaid 图源码
 ```
 
@@ -195,6 +196,7 @@ npm test
 这样几何改错了会立刻失败，而不会因为编码器版本差异产生假阳性。
 
 CI 在每次 push 到 `main` 和每个 PR 上跑，矩阵覆盖 Ubuntu/Windows × Node 20/22。
+发版时 `release.yml` 额外把打包出的 tgz 装进 **Ubuntu / Windows / macOS 三个干净环境**各跑一次真实拼版（sharp 的平台二进制由 registry 按当前平台自动解析，这一步验的就是它），三平台全过才创建 GitHub Release。
 
 ---
 
@@ -221,15 +223,18 @@ npm run docs
 <summary><b>发版流程</b></summary>
 
 ```bash
+npm run release-check    # 发版前审查（8 项，见下）
 npm run release          # patch 版本：改版本号 → 发 npm → 打 tag 推送
 npm run release:minor    # minor 版本
 npm run release:major    # major 版本
 ```
 
-发版分两段，职责分开：
+**发版前审查**（`scripts/release-check.sh`，本地 `npm run release-check` 与 CI 跑同一份脚本，约定同 CreditDaddy）：版本号 → 语法 → 测试 → CHANGELOG 归档与 [Unreleased] 残留 → tag 与 npm 版本占用（`name@version` 永久不可重用）→ npm 包清单核对 → 工作区干净。CI 侧 `release-check.yml` 在手动触发或带 `release` 标签的 PR 上跑。
+
+之后分两段，职责分开：
 
 - **npm 发布在本地手动完成** —— `npm publish --registry=https://registry.npmjs.org`（本机 `.npmrc` 已有凭证）。CI 不碰 npm，也不需要在仓库存任何 secret。
-- **推送 `v*` tag 触发 CI** —— `.github/workflows/release.yml` 跑测试 → 校验 tag 与 `package.json` 版本一致 → `npm pack` → 创建 GitHub Release（自动生成 release notes，附件为 tgz）。
+- **推送 `v*` tag 触发 CI** —— `.github/workflows/release.yml` 三段式：`pack`（测试 → 校验 tag 与版本一致 → `npm pack`）→ `verify`（**Ubuntu / Windows / macOS 三平台**把 tgz 装进干净环境，跑真实拼版并校验输出尺寸）→ 三平台全绿才创建 GitHub Release（自动生成 release notes，附件为 tgz）。
 
 `npm run release` 把这两段串了起来。若本机 registry 配了镜像，记得用 `npm run publish:npm`（已显式指定官方源）。
 

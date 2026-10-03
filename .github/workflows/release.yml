@@ -1,8 +1,11 @@
 name: Release
 
-# 打 v* tag 触发：跑测试 → 打包 tgz → 建 GitHub Release
+# 打 v* tag 触发，三段式（对齐 10router CLI 的「出包后自检」约定，做成 CI 三平台矩阵）：
+#   pack    → 跑测试 → 校验 tag 与 package.json 版本一致 → npm pack 出 tgz
+#   verify  → Ubuntu / Windows / macOS 三平台把 tgz 装进干净环境，跑真实拼版并校验输出
+#             （sharp 的平台二进制由 registry 按当前平台自动解析 —— 这一关就是验它）
+#   release → 三平台全绿才创建 GitHub Release（附件为 tgz）
 # npm 发布在本地手动完成（npm publish --registry=https://registry.npmjs.org），CI 不碰 npm
-# 用法：npm version patch && npm publish && git push --follow-tags
 on:
   push:
     tags: ['v*']
@@ -11,7 +14,7 @@ permissions:
   contents: write  # 需要创建 Release
 
 jobs:
-  release:
+  pack:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -31,7 +34,6 @@ jobs:
         run: npm test
 
       - name: 校验 tag 与 package.json 版本一致
-        if: startsWith(github.ref, 'refs/tags/')
         run: |
           TAG="${GITHUB_REF#refs/tags/}"
           VER="$(node -p "require('./package.json').version")"
@@ -47,8 +49,63 @@ jobs:
           npm pack --pack-destination dist
           ls -la dist/
 
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tgz
+          path: dist/*.tgz
+          if-no-files-found: error
+
+  verify:
+    name: 试装验证 (${{ matrix.os }})
+    needs: pack
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: tgz
+          path: dist
+
+      # 不 checkout、不装 devDependencies —— 干净环境里 tgz 必须自己把依赖拉齐。
+      # 先 npm init：空目录直接 `npm install <tarball>` 在部分 npm 版本下不会落盘
+      - name: 安装 tgz
+        shell: bash
+        run: |
+          npm init -y >/dev/null
+          npm install --no-audit --no-fund dist/techysy-cardsheet-*.tgz
+
+      - name: bin 入口可执行
+        shell: bash
+        # --no-install：只允许解析本地装好的 tgz，禁止 npx 从 registry 兜底（否则验证形同虚设）
+        run: npx --no-install cardsheet --help
+
+      # 120x80mm @100dpi = 472x315px，与 test/smoke.js 同一组数字
+      - name: 真实拼版并校验输出
+        shell: bash
+        run: |
+          node -e "require('sharp')({ create: { width: 400, height: 250, channels: 3, background: '#e0e0e0' } }).png().toFile('card.png')"
+          npx --no-install cardsheet card.png --sheet 120x80 --dpi 100 --repeat --cutlines -o out
+          node -e "require('sharp')('out/sheet.png').metadata().then((m) => { if (m.width !== 472 || m.height !== 315) throw new Error('输出尺寸不符: ' + m.width + 'x' + m.height); console.log('✓ ' + m.width + 'x' + m.height); })"
+
+  release:
+    needs: [pack, verify]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: tgz
+          path: dist
+
       - name: 创建 GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true

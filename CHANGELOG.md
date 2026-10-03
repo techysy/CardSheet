@@ -4,6 +4,16 @@
 
 ---
 
+## [Unreleased]
+
+### 🔧 CI / 工程化
+
+- **发版前审查** `scripts/release-check.sh`（约定同 CreditDaddy：本地 `npm run release-check` 与 CI 跑同一份脚本）：8 项检查 —— 版本号、JS 语法、单元测试、CHANGELOG 归档与 `[Unreleased]` 残留、tag 与 npm 版本占用（`name@version` 永久不可重用，发布前必须确认没人占）、npm 包清单核对（`files` 白名单之外不得混入）、工作区干净。CI 侧 `release-check.yml` 在手动触发或带 `release` 标签的 PR 上运行
+- **release.yml 打包链路拆成三段**：`pack`（测试 → 校验 tag 与版本一致 → `npm pack`）→ `verify`（**Ubuntu / Windows / macOS 三平台**把 tgz 装进干净环境，`bin` 入口可执行 + 真实拼版并校验输出尺寸 472×315 —— sharp 的平台二进制由 registry 按当前平台自动解析，这一步验的就是它）→ `release`（三平台全绿才创建 GitHub Release）
+- **ci.yml 对齐 imgmark 约定**：新增生产依赖安全公告硬门禁（`npm audit --omit=dev`，显式官方 registry 避免镜像滞后误报）
+
+---
+
 ## [0.1.0] (2026-10-03)
 
 首个可发布版本。
