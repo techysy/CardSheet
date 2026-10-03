@@ -1,6 +1,6 @@
 {
   "name": "@techysy/cardsheet",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "把若干图片拼到一张可打印的大图上（纸张预设 / 间距 / 裁切线），打印后按格裁切",
   "bin": {
     "cardsheet": "bin/cardsheet.js"
