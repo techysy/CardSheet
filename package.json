@@ -8,15 +8,32 @@
   "main": "src/sheet.js",
   "scripts": {
     "test": "node test/smoke.js",
-    "docs": "node scripts/build-diagrams.mjs"
+    "check": "node --check bin/cardsheet.js && node --check src/sheet.js && node --check test/smoke.js",
+    "docs": "node scripts/build-diagrams.mjs",
+    "pack:check": "npm pack --dry-run",
+    "release": "npm run check && npm test && npm version patch && git push --follow-tags",
+    "release:minor": "npm run check && npm test && npm version minor && git push --follow-tags",
+    "release:major": "npm run check && npm test && npm version major && git push --follow-tags",
+    "prepublishOnly": "npm test"
   },
   "files": [
     "bin",
     "src",
-    "docs",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/techysy/CardSheet.git"
+  },
+  "homepage": "https://github.com/techysy/CardSheet#readme",
+  "bugs": {
+    "url": "https://github.com/techysy/CardSheet/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "engines": {
     "node": ">=20.9.0"
   },

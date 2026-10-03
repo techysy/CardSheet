@@ -23,6 +23,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
+          cache: npm
+
+      # test/smoke.js requires sharp and the engine, so deps must be installed first
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
 
       - name: Syntax check
         shell: bash

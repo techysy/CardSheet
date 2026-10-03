@@ -1,64 +1,57 @@
-# cardsheet
+<div align="center">
 
-把若干图片拼到一张可打印的大图上（拼版 / 拆件）：按常见纸张预设换算像素，单元格间距与页边距按毫米计，可在间距正中画裁切线 —— 打印后按格裁切。
+# CardSheet
 
-典型场景：一张卡片设计（饮品介绍、名片）要打印后拆成一小张一小张 —— 用 `--repeat` 让它铺满整张 A4。
+**把若干图片拼成一张可打印的大图：7 种纸张预设 · 毫米级间距与裁切线 · 一张卡片自动铺满整页，打印后按格裁切**
 
-零配置、零依赖服务、单一运行时依赖（[sharp](https://sharp.pixelplumbing.com/)），单条命令出图。
+[![CI](https://img.shields.io/github/actions/workflow/status/techysy/CardSheet/ci.yml?branch=main&label=CI)](https://github.com/techysy/CardSheet/actions/workflows/ci.yml)
+[![Platform](https://img.shields.io/badge/%E5%B9%B3%E5%8F%B0-Windows%20%7C%20macOS%20%7C%20Linux-6b7280)](#快速开始)
+[![Node](https://img.shields.io/badge/Node.js-%E2%89%A5%2020.9-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![License](https://img.shields.io/github/license/techysy/CardSheet?label=%E8%AE%B8%E5%8F%AF&color=f59e0b)](LICENSE)
+
+[功能](#功能) · [快速开始](#快速开始) · [命令行选项](#命令行选项) · [版面求解](#版面求解) · [命令行 API](#命令行-api) · [测试](#测试) · [更新日志](CHANGELOG.md)
+
+</div>
+
+> **典型场景**：一张卡片设计（饮品介绍、名片）要打印后拆成一小张一小张 —— 用 `--repeat` 让它铺满整张 A4，打印、沿裁切线一刀切下去就是成品。
+>
+> 单一运行时依赖 [sharp](https://sharp.pixelplumbing.com/)，零配置、零服务，单条命令出图。
+
+---
 
 ## 功能
 
-- **纸张预设**：A4 / A5 / A3 / B5 / 4×6 / 5×7 相纸 / 标准名片，也可 `--sheet 210x297` 直接给毫米
-- **四种排布给法**：固定单元格、固定行列、单向推算、全自动「每页塞最多」，详见[版面求解](#版面求解)
-- **毫米进、像素算**：对外全是毫米，引擎内部只做一次 `mm2px` 换算，杜绝舍入误差在几何里累积
-- **自动分页**：图多于一页时自动切 `sheet.png` / `sheet-2.png` / `sheet-3.png`…
-- **裁切线**：`--cutlines` 在间距正中画实心浅灰线，打印可见、裁得准
-- **打印级输出**：默认 300 dpi，可调 36–1200
-- **两种用法**：命令行，或把 `buildSheets()` 当模块嵌进别的程序
+**纸张与分辨率**
+- **7 种纸张预设**：A4 / A5 / A3 / B5 / 4×6 / 5×7 相纸 / 标准名片（86×54mm），也可 `--sheet 210x297` 直接给毫米。
+- **打印级输出**：默认 300 dpi，可调 36–1200 —— 名片小字、照片放大都够用。
+- **横竖版切换**：`--landscape` 一键横放，版面自动重算。
 
-## 🏗️ 架构
+**排版与拼版**
+- **四种排布给法**：固定单元格、固定行列、单向推算、全自动「每页塞最多」，详见[版面求解](#版面求解)。
+- **毫米进、像素算**：对外全是毫米，引擎内部只做一次 `mm2px` 换算，杜绝舍入误差在几何里累积。
+- **自动分页**：图多于一页时自动切 `sheet.png` / `sheet-2.png` / `sheet-3.png`…，不用自己算页数。
+- **单图铺满**：`--repeat` 用第一张图铺满整页 —— 同一张卡片拼版的标准做法。
 
-> 深色模式看 [`docs/architecture.svg`](docs/architecture.svg)，浅色模式看 [`docs/architecture-light.svg`](docs/architecture-light.svg)；版面求解决策树见 [`docs/layout.svg`](docs/layout.svg) / [`docs/layout-light.svg`](docs/layout-light.svg)。
+**裁切与成品质感**
+- **裁切线**：`--cutlines` 在间距正中画浅灰实线，线宽随 dpi 缩放（约 0.17mm），打印可见、裁得准。
+- **自适应留白**：横图 / 竖图自动 `contain` 居中进单元格，多出的部分填成页面底色，不会拉伸变形。
+- **参数写错就报错**：`--cols abc`、裸写 `--cols`、`--margin` 大到版面不足，都会直接报错 —— 不会静默换一套版面，更不会输出一张全白的纸。
 
-```
-                     命令行 / Node 调用
-                              │
-        ┌─────────────────────▼─────────────────────┐
-        │  ① CLI 层   bin/cardsheet.js               │
-        │     parseArgs → 读图 → 写盘 → 打印摘要      │
-        └─────────────────────┬─────────────────────┘
-                              │ images: [{ buffer, name }]
-        ┌─────────────────────▼─────────────────────┐
-        │  ② 引擎层   src/sheet.js · buildSheets()   │
-        │     规格→毫米→像素 · 版面求解 · 分页         │
-        │     contain 缩放 · 逐格 composite · 裁切线   │
-        └─────────────────────┬─────────────────────┘
-                              │
-        ┌─────────────────────▼─────────────────────┐
-        │  ③ 图像层   sharp (libvips)                │
-        │     metadata · resize · create · composite  │
-        └─────────────────────┬─────────────────────┘
-                              │
-                        pages: Buffer[]
-```
-
-CLI 层不认识毫米，引擎层不认识文件系统 —— `buildSheets` 进出都是 `Buffer`，中间不碰磁盘，因此能直接嵌进 Web 服务、Electron 或别的 CLI 而不必改一行。
-
-坐标与单位约定、版面求解规则、渲染管线细节见 **[docs/architecture.md](docs/architecture.md)**。
-
-## 安装
-
-```bash
-npm install          # 依赖 sharp
-# 或
-npm install -g cardsheet
-```
-
-要求 Node.js ≥ 20.9。
+---
 
 ## 快速开始
 
+**免安装**
+
 ```bash
+npx cardsheet card.png --paper a4 --repeat --cutlines
+```
+
+**全局安装**
+
+```bash
+npm install -g cardsheet
+
 # 一张饮品卡片铺满 A4，带裁切线（300dpi 打印级）
 cardsheet card.png --paper a4 --repeat --cutlines
 
@@ -69,9 +62,20 @@ cardsheet p1.png p2.png p3.png --paper 4x6 --landscape --gap 3
 cardsheet front.png --cell 86x54 --paper a4 --cols 2 --rows 5 --cutlines
 ```
 
-不用装也能跑：`npx cardsheet card.png --paper a4 --repeat --cutlines`
+**源码运行**
 
-## 用法
+```bash
+git clone https://github.com/techysy/CardSheet.git
+cd CardSheet
+npm install
+node bin/cardsheet.js card.png --paper a4 --repeat --cutlines
+```
+
+要求 Node.js ≥ 20.9。
+
+---
+
+## 命令行选项
 
 ```
 cardsheet <图片...> [选项]
@@ -94,8 +98,6 @@ cardsheet <图片...> [选项]
 | `--quality 90` | jpeg 质量 |
 | `--prefix sheet` | 输出文件名前缀（多页自动 `-2`、`-3`…） |
 | `-o 目录` | 输出目录（默认当前目录，不存在会创建） |
-
-横图 / 竖图自动 `contain` 居中进单元格，多出的部分填成页面底色。参数写错就直接报错（`--cols abc`、裸写 `--cols` 都会报），不会静默换一套版面；给 `--margin`、纸张或 `--cell` 时尺寸会算错也直接报错，不会输出一张全白的纸。
 
 ### 版面求解
 
@@ -120,10 +122,14 @@ cardsheet back.png  --cell 86x54 --paper a4 --cols 2 --rows 5 --cutlines --prefi
 # 双面打印时选中「翻转」/「长边翻转」
 ```
 
+---
+
 ## 命令行 API
 
+CLI 层不认识毫米，引擎层不认识文件系统 —— `buildSheets` 进出都是 `Buffer`，中间不碰磁盘，因此能直接嵌进 Web 服务、Electron 或别的 CLI 而不必改一行。
+
 ```js
-const { buildSheets, resolvePaper, PAPERS, mm2px } = require('cardsheet/src/sheet');
+const { buildSheets, resolvePaper, PAPERS, mm2px } = require('cardsheet');
 
 const r = await buildSheets({
   images: [{ buffer, name }],   // 必填，顺序即排布顺序
@@ -149,8 +155,20 @@ const r = await buildSheets({
   dpi }
 ```
 
-`cellW / cellH` 是像素；反算毫米用 `cellW / dpi * 25.4`（CLI 摘要那行就是这么算的）。
-另外还导出 `resolvePaper` / `PAPERS` / `mm2px`，方便自己拼版面。
+`cellW / cellH` 是像素；反算毫米用 `cellW / dpi * 25.4`。另外还导出 `resolvePaper` / `PAPERS` / `mm2px`，方便自己拼版面。
+
+### 架构
+
+<div align="center">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" src="docs/architecture.svg">
+  <img src="docs/architecture-light.svg" width="920" alt="CardSheet 架构">
+</picture>
+
+</div>
+
+---
 
 ## 项目结构
 
@@ -162,6 +180,8 @@ scripts/build-diagrams.mjs   由 docs/architecture.md 生成 docs/*.svg
 docs/architecture.md   架构文档与 Mermaid 图源码
 ```
 
+---
+
 ## 测试
 
 ```bash
@@ -170,6 +190,18 @@ npm test
 
 测试不比对图片快照，而是**读像素断言**：裁切线落在间距正中、该处颜色是浅灰 `#c8ccd2`；contain 居中后格子角落是留白、中心是内容；多图超量按 `perPage` 分页。
 这样几何改错了会立刻失败，而不会因为编码器版本差异产生假阳性。
+
+CI 在每次 push 到 `main` 和每个 PR 上跑，矩阵覆盖 Ubuntu/Windows × Node 20/22。
+
+---
+
+## 已知限制
+
+- **`--repeat` 只用第一张图**：其余传入的图片会被忽略，双面打印请分两次跑（见[关于双面打印](#关于双面打印)）。
+- **不支持出血位图**：没有 crop mark / 出血标记，打印前请自行在印厂设置里处理。
+- **横向拼版不自动旋转**：给了 `--landscape` 也只是换纸张方向，不会把图片转 90°。
+
+---
 
 ## 贡献
 
@@ -181,7 +213,21 @@ npm run docs
 ```
 
 `docs/*.svg` 是产物，不要直接编辑。
-mermaid-cli 会顺带装一份 chromium，其实用不上 —— 脚本会复用本机已装的 Chrome / Edge；不需要那份下载的话装依赖时加 `PUPPETEER_SKIP_DOWNLOAD=1`。
+
+<details>
+<summary><b>发版流程</b></summary>
+
+```bash
+npm run release          # patch 版本 + 打 tag + 推送，触发 CI 发版
+npm run release:minor    # minor 版本
+npm run release:major    # major 版本
+```
+
+推送 `v*` tag 会触发 `.github/workflows/release.yml`：跑测试 → 校验 tag 与 `package.json` 版本一致 → `npm pack` → 发布到 npm → 创建 GitHub Release（自动生成 release notes）。
+
+首次发布前需要在仓库 **Settings → Secrets** 里加一个 `NPM_TOKEN`（npmjs.com → Access Tokens → Generate New Token，勾选 publish 权限）。
+
+</details>
 
 ## 📄 许可证
 
