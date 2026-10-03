@@ -1,0 +1,28 @@
+{
+  "name": "cardsheet",
+  "version": "0.1.0",
+  "description": "把若干图片拼到一张可打印的大图上（纸张预设 / 间距 / 裁切线），打印后按格裁切",
+  "bin": {
+    "cardsheet": "bin/cardsheet.js"
+  },
+  "main": "src/sheet.js",
+  "scripts": {
+    "test": "node test/smoke.js"
+  },
+  "engines": {
+    "node": ">=20.9.0"
+  },
+  "dependencies": {
+    "sharp": "^0.35.4"
+  },
+  "keywords": [
+    "print",
+    "imposition",
+    "tiling",
+    "sheet",
+    "拼版",
+    "拆件"
+  ],
+  "license": "MIT",
+  "author": "techysy"
+}
