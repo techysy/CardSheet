@@ -1,15 +1,11 @@
 name: Release
 
 # 打 v* tag 触发：跑测试 → 打包 tgz → 建 GitHub Release
-# 用法：npm version patch && git push --follow-tags
+# npm 发布在本地手动完成（npm publish --registry=https://registry.npmjs.org），CI 不碰 npm
+# 用法：npm version patch && npm publish && git push --follow-tags
 on:
   push:
     tags: ['v*']
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: '要发布的 tag（如 v0.1.0），留空则用当前 HEAD'
-        required: false
 
 permissions:
   contents: write  # 需要创建 Release
@@ -26,7 +22,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-          registry-url: 'https://registry.npmjs.org'
           cache: npm
 
       - name: 安装依赖
@@ -51,12 +46,6 @@ jobs:
           mkdir -p dist
           npm pack --pack-destination dist
           ls -la dist/
-
-      - name: 发布 npm
-        if: startsWith(github.ref, 'refs/tags/')
-        run: npm publish --access public --registry=https://registry.npmjs.org
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: 创建 GitHub Release
         if: startsWith(github.ref, 'refs/tags/')

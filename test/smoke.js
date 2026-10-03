@@ -9,7 +9,7 @@ const path = require('path');
 const assert = require('assert');
 const { spawnSync } = require('child_process');
 const sharp = require('sharp');
-const { buildSheets } = require('../src/sheet');
+const { buildSheets, mm2px } = require('../src/sheet');
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'cardsheet-test-'));
 let pass = 0, fail = 0;
@@ -68,9 +68,33 @@ async function main() {
     });
     assert.strictEqual(r2p.pages.length, 2, '5 图 4 格应分 2 页');
   });
-  await t('自动排布：以首图宽高比取每页张数最多', async () => {
-    const r = await buildSheets({ images: [{ buffer: imgB, name: 'b.png' }], paper: 'a4', dpi: 100, repeat: true });
-    assert(r.cols >= 1 && r.rows >= 1 && r.cols * r.rows >= 2, `A4 应能排下多张: ${r.cols}x${r.rows}`);
+  await t('自动排布：取每页张数最多，并列取列少者', async () => {
+    // 契约：枚举所有列数，取 每页张数 最大 的方案；并列时取列少的（单元格横向更宽）
+    // 这里独立把整张表算出来当 oracle，而不是复述引擎的循环 —— 否则两边一起改错照样通过
+    const oracle = (paperWmm, paperHmm, aspect, margin, gap) => {
+      const pw = mm2px(paperWmm, 100), ph = mm2px(paperHmm, 100);
+      const m = mm2px(margin, 100), g = mm2px(gap, 100);
+      const maxCols = Math.max(1, Math.floor((pw - 2 * m + g) / (mm2px(15, 100) + g)));
+      const table = [];
+      for (let c = 1; c <= maxCols; c++) {
+        const cw = Math.floor((pw - 2 * m - (c - 1) * g) / c);
+        const ch = Math.round(cw / aspect);
+        const rows = Math.max(1, Math.floor((ph - 2 * m + g) / (ch + g)));
+        table.push({ c, rows, count: c * rows });
+      }
+      const max = Math.max(...table.map((x) => x.count));
+      return table.find((x) => x.count === max); // 表格按列数升序 ⇒ 首个并列者就是列少的
+    };
+
+    for (const [label, buf, aspect, paper] of [
+      ['A4 方图', await sharp({ create: { width: 300, height: 300, channels: 3, background: '#ccc' } }).png().toBuffer(), 1, [210, 297]],
+      ['A4 竖图', imgB, 2 / 3, [210, 297]],
+    ]) {
+      const want = oracle(paper[0], paper[1], aspect, 5, 2);
+      const r = await buildSheets({ images: [{ buffer: buf }], paper: 'a4', dpi: 100, repeat: true });
+      assert.strictEqual(r.cols, want.c, `${label}：列数应为 ${want.c}（每页 ${want.count} 张），实际 ${r.cols} 列 × ${r.rows} 行 = ${r.cols * r.rows} 张`);
+      assert.strictEqual(r.rows, want.rows, `${label}：行数应为 ${want.rows}，实际 ${r.rows}`);
+    }
   });
   await t('contain 居中：竖图进正方格，两侧留白、内容居中', async () => {
     const r = await buildSheets({

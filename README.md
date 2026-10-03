@@ -130,7 +130,7 @@ cardsheet back.png  --cell 86x54 --paper a4 --cols 2 --rows 5 --cutlines --prefi
 CLI 层不认识毫米，引擎层不认识文件系统 —— `buildSheets` 进出都是 `Buffer`，中间不碰磁盘，因此能直接嵌进 Web 服务、Electron 或别的 CLI 而不必改一行。
 
 ```js
-const { buildSheets, resolvePaper, PAPERS, mm2px } = require('cardsheet');
+const { buildSheets, resolvePaper, PAPERS, mm2px } = require('@techysy/cardsheet');
 
 const r = await buildSheets({
   images: [{ buffer, name }],   // 必填，顺序即排布顺序
@@ -219,14 +219,17 @@ npm run docs
 <summary><b>发版流程</b></summary>
 
 ```bash
-npm run release          # patch 版本 + 打 tag + 推送，触发 CI 发版
+npm run release          # patch 版本：改版本号 → 发 npm → 打 tag 推送
 npm run release:minor    # minor 版本
 npm run release:major    # major 版本
 ```
 
-推送 `v*` tag 会触发 `.github/workflows/release.yml`：跑测试 → 校验 tag 与 `package.json` 版本一致 → `npm pack` → 发布到 npm → 创建 GitHub Release（自动生成 release notes）。
+发版分两段，职责分开：
 
-首次发布前需要在仓库 **Settings → Secrets** 里加一个 `NPM_TOKEN`（npmjs.com → Access Tokens → Generate New Token，勾选 publish 权限）。
+- **npm 发布在本地手动完成** —— `npm publish --registry=https://registry.npmjs.org`（本机 `.npmrc` 已有凭证）。CI 不碰 npm，也不需要在仓库存任何 secret。
+- **推送 `v*` tag 触发 CI** —— `.github/workflows/release.yml` 跑测试 → 校验 tag 与 `package.json` 版本一致 → `npm pack` → 创建 GitHub Release（自动生成 release notes，附件为 tgz）。
+
+`npm run release` 把这两段串了起来。若本机 registry 配了镜像，记得用 `npm run publish:npm`（已显式指定官方源）。
 
 </details>
 

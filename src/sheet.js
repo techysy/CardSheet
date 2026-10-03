@@ -134,13 +134,15 @@ async function buildSheets(o = {}) {
     const minCell = mm2px(15, dpiN);
     const maxCols = Math.max(1, Math.floor((pw - 2 * m + g) / (minCell + g)));
     let best = null;
-    // 从多到少枚举列数，提前发现最优解就退出（减少计算量）
-    for (let c = maxCols; c >= 1; c--) {
+    // 从少到多枚举列数。这里刻意不做提前退出：count 在整个区间内单调递增（列越多、
+    // 单元格越窄、每页张数越多），最优解总在末位 c = maxCols，提前退出既无收益，
+    // 退出条件还得额外论证单调性才敢信。枚举量本身只有几十次。
+    for (let c = 1; c <= maxCols; c++) {
       const cw = Math.floor((pw - 2 * m - (c - 1) * g) / c);
       const chh = Math.round(cw / aspect);
       const r = Math.max(1, Math.floor((ph - 2 * m + g) / (chh + g)));
       const count = c * r;
-      // 只更新面积更大的方案（保留列少的平局结果）
+      // 严格大于 ⇒ 并列时保留先遇到的，也就是列少的那个
       if (!best || count > best.count) {
         best = { c, r, cw, ch: chh, count };
       }

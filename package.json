@@ -1,5 +1,5 @@
 {
-  "name": "cardsheet",
+  "name": "@techysy/cardsheet",
   "version": "0.1.0",
   "description": "把若干图片拼到一张可打印的大图上（纸张预设 / 间距 / 裁切线），打印后按格裁切",
   "bin": {
@@ -11,9 +11,10 @@
     "check": "node --check bin/cardsheet.js && node --check src/sheet.js && node --check test/smoke.js",
     "docs": "node scripts/build-diagrams.mjs",
     "pack:check": "npm pack --dry-run",
-    "release": "npm run check && npm test && npm version patch && git push --follow-tags",
-    "release:minor": "npm run check && npm test && npm version minor && git push --follow-tags",
-    "release:major": "npm run check && npm test && npm version major && git push --follow-tags",
+    "publish:npm": "npm publish --access public --registry=https://registry.npmjs.org",
+    "release": "npm run check && npm test && npm version patch && npm run publish:npm && git push --follow-tags",
+    "release:minor": "npm run check && npm test && npm version minor && npm run publish:npm && git push --follow-tags",
+    "release:major": "npm run check && npm test && npm version major && npm run publish:npm && git push --follow-tags",
     "prepublishOnly": "npm test"
   },
   "files": [
