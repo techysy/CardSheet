@@ -5,6 +5,7 @@
 **把若干图片拼成一张可打印的大图：7 种纸张预设 · 毫米级间距与裁切线 · 一张卡片自动铺满整页，打印后按格裁切**
 
 [![CI](https://img.shields.io/github/actions/workflow/status/techysy/CardSheet/ci.yml?branch=main&label=CI)](https://github.com/techysy/CardSheet/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/@techysy/cardsheet?label=npm&color=CB3837&logo=npm&logoColor=white)](https://www.npmjs.com/package/@techysy/cardsheet)
 [![Platform](https://img.shields.io/badge/%E5%B9%B3%E5%8F%B0-Windows%20%7C%20macOS%20%7C%20Linux-6b7280)](#快速开始)
 [![Node](https://img.shields.io/badge/Node.js-%E2%89%A5%2020.9-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![License](https://img.shields.io/github/license/techysy/CardSheet?label=%E8%AE%B8%E5%8F%AF&color=f59e0b)](LICENSE)
@@ -44,13 +45,13 @@
 **免安装**
 
 ```bash
-npx cardsheet card.png --paper a4 --repeat --cutlines
+npx @techysy/cardsheet card.png --paper a4 --repeat --cutlines
 ```
 
 **全局安装**
 
 ```bash
-npm install -g cardsheet
+npm install -g @techysy/cardsheet
 
 # 一张饮品卡片铺满 A4，带裁切线（300dpi 打印级）
 cardsheet card.png --paper a4 --repeat --cutlines
